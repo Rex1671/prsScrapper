@@ -1,0 +1,29 @@
+{
+  "name": "prs-scraper-function",
+  "version": "1.0.0",
+  "description": "Appwrite Cloud Function to scrape PRS India data for MPs and MLAs",
+  "main": "src/main.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "keywords": [
+    "appwrite",
+    "function",
+    "prs-india",
+    "scraper",
+    "parliament",
+    "assembly"
+  ],
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.12",
+    "node-fetch": "^3.3.2",
+    "p-limit": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
