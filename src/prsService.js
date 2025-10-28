@@ -1,4 +1,4 @@
-// src/prsService.js - ENHANCED VERSION with Lok Sabha variations and numeric suffixes
+// src/prsService.js - OPTIMIZED VERSION with Priority Queue & Early Termination
 import * as cheerio from 'cheerio';
 import pLimit from 'p-limit';
 import { fetchHTML } from './webextract.js';
@@ -36,50 +36,315 @@ export async function getPRSData(name, type, constituency = null, state = null) 
   }
 }
 
+// ============================================================================
+// PRIORITY QUEUE APPROACH - CHECK MOST LIKELY URLS FIRST WITH EARLY TERMINATION
+// ============================================================================
+
 async function tryFetchWithType(name, type, reduced = false) {
   const urls = constructURLs(name, type, reduced);
   
-  console.log(`🔗 [PRS] Checking ${urls.length} URLs in parallel`);
+  if (urls.length === 0) {
+    console.log(`⚠️ [PRS] No URLs generated for ${name}`);
+    return getEmptyResponse();
+  }
+  
+  console.log(`🔗 [PRS] Checking up to ${urls.length} URLs with priority-based early termination`);
 
-  const fetchPromises = urls.map((url, index) => 
-    limit(async () => {
-      try {
-        const startTime = Date.now();
-        const html = await fetchHTML(url);
-        const duration = Date.now() - startTime;
+  // Group URLs by priority for MPs
+  let priorityGroups = [];
+  
+  if (type === 'MP') {
+    priorityGroups = [
+      // Priority 1: 18th Lok Sabha, base name, no suffix
+      urls.filter(u => u.includes('18th-lok-sabha') && !u.match(/-\d+$/)),
+      
+      // Priority 2: 18th Lok Sabha with numeric suffixes
+      urls.filter(u => u.includes('18th-lok-sabha') && u.match(/-\d+$/)),
+      
+      // Priority 3: 17th Lok Sabha, base name
+      urls.filter(u => u.includes('17th-lok-sabha') && !u.match(/-\d+$/)),
+      
+      // Priority 4: 17th Lok Sabha with numeric suffixes
+      urls.filter(u => u.includes('17th-lok-sabha') && u.match(/-\d+$/)),
+      
+      // Priority 5: 16th Lok Sabha, base name
+      urls.filter(u => u.includes('16th-lok-sabha') && !u.match(/-\d+$/)),
+      
+      // Priority 6: 16th Lok Sabha with numeric suffixes
+      urls.filter(u => u.includes('16th-lok-sabha') && u.match(/-\d+$/))
+    ];
+  } else {
+    // For MLAs, simpler priority: base names first, then suffixes
+    priorityGroups = [
+      urls.filter(u => !u.match(/-\d+$/)), // No numeric suffix
+      urls.filter(u => u.match(/-\d+$/))   // With numeric suffix
+    ];
+  }
+
+  let totalChecked = 0;
+
+  // Check each priority group sequentially
+  for (let groupIndex = 0; groupIndex < priorityGroups.length; groupIndex++) {
+    const group = priorityGroups[groupIndex];
+    
+    if (group.length === 0) continue;
+    
+    console.log(`🔍 [PRS] Priority Group ${groupIndex + 1}/${priorityGroups.length}: Checking ${group.length} URLs`);
+    
+    // Check this group in parallel (max 8 concurrent)
+    const results = await Promise.allSettled(
+      group.map((url, index) => 
+        limit(async () => {
+          try {
+            const startTime = Date.now();
+            const html = await fetchHTML(url);
+            const duration = Date.now() - startTime;
+            
+            totalChecked++;
+            
+            if (html && validateMemberPage(html, type)) {
+              console.log(`✅ [${totalChecked}/${urls.length}] Found in ${duration}ms - ${url}`);
+              return { url, html, success: true, duration };
+            }
+            
+            console.log(`❌ [${totalChecked}/${urls.length}] Invalid (${duration}ms)`);
+            return { success: false };
+            
+          } catch (err) {
+            totalChecked++;
+            console.log(`❌ [${totalChecked}/${urls.length}] Failed: ${err.message}`);
+            return { success: false, error: err.message };
+          }
+        })
+      )
+    );
+    
+    // Check if any succeeded in this group
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value.success) {
+        const { url, html, duration } = result.value;
         
-        if (html && html.length > 1000 && validateMemberPage(html, type)) {
-          console.log(`✅ [${index}] Found in ${duration}ms - URL: ${url}`);
-          return { url, html, success: true, duration };
+        const parsedData = parseToFlatFormat(html, type);
+        
+        if (parsedData.name && parsedData.name !== 'Unknown') {
+          console.log(`🎯 [PRS] SUCCESS! Found in Priority Group ${groupIndex + 1}`);
+          console.log(`📊 [PRS] Checked ${totalChecked}/${urls.length} URLs (${duration}ms for match)`);
+          
+          return {
+            found: true,
+            data: parsedData,
+            sourceUrl: url,
+            checkedUrls: totalChecked,
+            totalUrls: urls.length
+          };
+        }
+      }
+    }
+    
+    console.log(`⏭️  [PRS] Priority Group ${groupIndex + 1} complete, moving to next group`);
+  }
+
+  console.log(`❌ [PRS] No valid pages found among ${totalChecked} URLs checked`);
+  return getEmptyResponse();
+}
+
+// ============================================================================
+// ENHANCED URL CONSTRUCTION WITH DEDUPLICATION & SMART VARIATIONS
+// ============================================================================
+
+function constructURLs(name, type, reduced = false) {
+  // Normalize and sanitize name
+  const nameSlug = name
+    .toLowerCase()
+    .replace(/\+/g, ' ')         // treat + as space
+    .replace(/\./g, '')          // remove dots
+    .replace(/\s+/g, '-')        // replace spaces with dashes
+    .replace(/[^a-z0-9-]/g, '')  // remove all other special chars
+    .replace(/-+/g, '-')         // replace multiple hyphens with single
+    .replace(/^-|-$/g, '');      // remove leading/trailing hyphens
+
+  const urlSet = new Set(); // Use Set to avoid duplicates
+  const urls = [];
+  
+  // Helper function to add URL if unique
+  const addURL = (url) => {
+    if (!urlSet.has(url)) {
+      urlSet.add(url);
+      urls.push(url);
+    }
+  };
+  
+  if (type === 'MP') {
+    // For MPs, try 18th, 17th, and 16th Lok Sabha
+    const lokSabhas = ['18th-lok-sabha', '17th-lok-sabha', '16th-lok-sabha'];
+    const numericSuffixes = ['', '-1', '-2', '-3'];
+    
+    // Generate all combinations for base name
+    for (const sabha of lokSabhas) {
+      for (const suffix of numericSuffixes) {
+        addURL(`https://prsindia.org/mptrack/${sabha}/${nameSlug}${suffix}`);
+      }
+    }
+    
+    // If not reduced, also try name variations
+    if (!reduced) {
+      const parts = name
+        .replace(/\+/g, ' ')
+        .trim()
+        .split(/\s+/)
+        .filter(p => p.length > 0);
+
+      // Try first-last for names with 2 or more parts
+      if (parts.length >= 2) {
+        const firstLast = `${parts[0]}-${parts[parts.length - 1]}`
+          .toLowerCase()
+          .replace(/[^a-z0-9-]/g, '')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+        
+        // Only add if different from original slug
+        if (firstLast !== nameSlug && firstLast.length > 0) {
+          for (const sabha of lokSabhas) {
+            for (const suffix of numericSuffixes) {
+              addURL(`https://prsindia.org/mptrack/${sabha}/${firstLast}${suffix}`);
+            }
+          }
+        }
+      }
+
+      // Try middle name variations for 3+ part names
+      if (parts.length >= 3) {
+        // Skip middle name (keep first and last)
+        const skipMiddle = [parts[0], parts[parts.length - 1]]
+          .join('-')
+          .toLowerCase()
+          .replace(/[^a-z0-9-]/g, '')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+        
+        const firstLast = `${parts[0]}-${parts[parts.length - 1]}`.toLowerCase();
+        
+        if (skipMiddle !== nameSlug && skipMiddle !== firstLast && skipMiddle.length > 0) {
+          for (const sabha of lokSabhas) {
+            addURL(`https://prsindia.org/mptrack/${sabha}/${skipMiddle}`);
+          }
         }
         
-        return { url, html: null, success: false };
-        
-      } catch (err) {
-        return { url, html: null, success: false };
+        // Try first name + middle initial + last name
+        if (parts[1].length > 0) {
+          const firstInitialLast = `${parts[0]}-${parts[1][0]}-${parts[parts.length - 1]}`
+            .toLowerCase()
+            .replace(/[^a-z0-9-]/g, '')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '');
+          
+          if (firstInitialLast !== nameSlug && firstInitialLast.length > 0) {
+            for (const sabha of lokSabhas) {
+              addURL(`https://prsindia.org/mptrack/${sabha}/${firstInitialLast}`);
+            }
+          }
+        }
       }
-    })
-  );
+    }
+    
+  } else {
+    // For MLAs - no Lok Sabha variations
+    const baseURL = 'https://prsindia.org/mlatrack/';
+    const numericSuffixes = ['', '-1', '-2', '-3'];
+    
+    // Base name with suffixes
+    for (const suffix of numericSuffixes) {
+      addURL(`${baseURL}${nameSlug}${suffix}`);
+    }
+    
+    if (!reduced) {
+      const parts = name
+        .replace(/\+/g, ' ')
+        .trim()
+        .split(/\s+/)
+        .filter(p => p.length > 0);
 
-  const results = await Promise.allSettled(fetchPromises);
-  
-  for (const result of results) {
-    if (result.status === 'fulfilled' && result.value.success) {
-      const { url, html } = result.value;
-      
-      const parsedData = parseToFlatFormat(html, type);
-      
-      if (parsedData.name && parsedData.name !== 'Unknown') {
-        console.log(`✅ [PRS] Successfully parsed: ${parsedData.name} from ${url}`);
-        return {
-          found: true,
-          data: parsedData
-        };
+      // Try first-last for names with 2 or more parts
+      if (parts.length >= 2) {
+        const firstLast = `${parts[0]}-${parts[parts.length - 1]}`
+          .toLowerCase()
+          .replace(/[^a-z0-9-]/g, '')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+        
+        if (firstLast !== nameSlug && firstLast.length > 0) {
+          for (const suffix of numericSuffixes) {
+            addURL(`${baseURL}${firstLast}${suffix}`);
+          }
+        }
+      }
+
+      // Try middle name variations for 3+ part names
+      if (parts.length >= 3) {
+        const skipMiddle = [parts[0], parts[parts.length - 1]]
+          .join('-')
+          .toLowerCase()
+          .replace(/[^a-z0-9-]/g, '')
+          .replace(/-+/g, '-')
+          .replace(/^-|-$/g, '');
+        
+        const firstLast = `${parts[0]}-${parts[parts.length - 1]}`.toLowerCase();
+        
+        if (skipMiddle !== nameSlug && skipMiddle !== firstLast && skipMiddle.length > 0) {
+          addURL(`${baseURL}${skipMiddle}`);
+        }
       }
     }
   }
 
-  return getEmptyResponse();
+  console.log(`🔗 Generated ${urls.length} unique URL variations for "${name}" (${type})`);
+  if (urls.length > 0) {
+    console.log(`   First: ${urls[0]}`);
+    if (urls.length > 1) {
+      console.log(`   Last:  ${urls[urls.length - 1]}`);
+    }
+  }
+  
+  return urls;
+}
+
+// ============================================================================
+// IMPROVED VALIDATION WITH ROBUST CHECKS
+// ============================================================================
+
+function validateMemberPage(html, type) {
+  if (!html || html.length < 500) {
+    return false; // Too short to be a real member page
+  }
+
+  // Check for "page not found" or error indicators
+  const lowerHTML = html.toLowerCase();
+  if (lowerHTML.includes('page not found') || 
+      lowerHTML.includes('404') || 
+      lowerHTML.includes('the requested page') ||
+      lowerHTML.includes('no member found')) {
+    return false;
+  }
+
+  if (type === 'MP') {
+    // MP pages should have at least one of these key indicators
+    return (
+      html.includes('mp-attendance') || 
+      html.includes('mp-debate') || 
+      html.includes('mp-questions') ||
+      html.includes('mp_state') ||
+      html.includes('mp_constituency') ||
+      html.includes('mptrack')
+    );
+  } else {
+    // MLA pages should have these indicators
+    return (
+      html.includes('mla_state') || 
+      html.includes('mla_constituency') ||
+      html.includes('mlatrack') ||
+      html.includes('field-name-field-mla-name')
+    );
+  }
 }
 
 // ============================================================================
@@ -580,87 +845,8 @@ function extractQuestionsTable($) {
 }
 
 // ============================================================================
-// ENHANCED URL CONSTRUCTION WITH LOK SABHA VARIATIONS & NUMERIC SUFFIXES
+// UTILITY FUNCTIONS
 // ============================================================================
-
-function constructURLs(name, type, reduced = false) {
-  // Normalize and sanitize name
-  const nameSlug = name
-    .toLowerCase()
-    .replace(/\+/g, ' ')         // treat + as space
-    .replace(/\./g, '')          // remove dots
-    .replace(/\s+/g, '-')        // replace spaces with dashes
-    .replace(/[^a-z0-9-]/g, ''); // remove all other special chars
-
-  const urls = [];
-  
-  if (type === 'MP') {
-    // For MPs, try 18th, 17th, and 16th Lok Sabha
-    const lokSabhas = ['18th-lok-sabha', '17th-lok-sabha', '16th-lok-sabha'];
-    const numericSuffixes = ['', '-1', '-2', '-3']; // base name + numeric variations
-    
-    // Generate all combinations
-    for (const sabha of lokSabhas) {
-      for (const suffix of numericSuffixes) {
-        urls.push(`https://prsindia.org/mptrack/${sabha}/${nameSlug}${suffix}`);
-      }
-    }
-    
-    // If not reduced, also try first-last name combinations
-    if (!reduced) {
-      const parts = name
-        .replace(/\+/g, ' ')
-        .trim()
-        .split(/\s+/);
-
-      if (parts.length > 2) {
-        const firstLast = `${parts[0]}-${parts[parts.length - 1]}`.toLowerCase();
-        
-        for (const sabha of lokSabhas) {
-          for (const suffix of numericSuffixes) {
-            urls.push(`https://prsindia.org/mptrack/${sabha}/${firstLast}${suffix}`);
-          }
-        }
-      }
-    }
-    
-  } else {
-    // For MLAs - no Lok Sabha variations, but still use numeric suffixes
-    const baseURL = 'https://prsindia.org/mlatrack/';
-    const numericSuffixes = ['', '-1', '-2', '-3'];
-    
-    for (const suffix of numericSuffixes) {
-      urls.push(`${baseURL}${nameSlug}${suffix}`);
-    }
-    
-    if (!reduced) {
-      const parts = name
-        .replace(/\+/g, ' ')
-        .trim()
-        .split(/\s+/);
-
-      if (parts.length > 2) {
-        const firstLast = `${parts[0]}-${parts[parts.length - 1]}`.toLowerCase();
-        
-        for (const suffix of numericSuffixes) {
-          urls.push(`${baseURL}${firstLast}${suffix}`);
-        }
-      }
-    }
-  }
-
-  console.log(`🔗 Generated ${urls.length} URL variations for ${name} (${type})`);
-  
-  return urls;
-}
-
-function validateMemberPage(html, type) {
-  if (type === 'MP') {
-    return html.includes('mp-attendance') || html.includes('mp-debate') || html.includes('mp_state');
-  } else {
-    return html.includes('mla_state') || html.includes('mla_constituency');
-  }
-}
 
 function getEmptyResponse() {
   return {
