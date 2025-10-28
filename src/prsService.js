@@ -814,36 +814,89 @@ function extractMLAEducation($) {
 // HTML TABLE EXTRACTION
 // ============================================================================
 
+f// ============================================================================
+// HTML TABLE EXTRACTION - FIXED SELECTORS
+// ============================================================================
+
 function extractAttendanceTable($) {
   try {
-    const table = $('#block-views-mp-related-views-block-1 table').first();
+    // Correct selector based on actual HTML structure
+    let table = $('#block-views-mps-attendance-block table').first();
+    
+    // Fallback to old selector if needed
+    if (!table.length) {
+      table = $('#block-views-mp-related-views-block-1 table').first();
+    }
+    
     if (table.length) {
+      console.log(`  ✅ Attendance table extracted (${table.find('tr').length} rows)`);
       return $.html(table);
     }
-  } catch (e) {}
+    
+    console.log(`  ⚠️ Attendance table not found`);
+  } catch (e) {
+    console.error(`  ❌ Error extracting attendance table:`, e.message);
+  }
   return '';
 }
 
 function extractDebatesTable($) {
   try {
-    const table = $('#block-views-mp-related-views-block table').first();
+    // Correct selector based on actual HTML structure
+    let table = $('#block-views-mps-debate-related-views-block table').first();
+    
+    // Fallback to old selector if needed
+    if (!table.length) {
+      table = $('#block-views-mp-related-views-block table').first();
+    }
+    
     if (table.length) {
+      console.log(`  ✅ Debates table extracted (${table.find('tr').length} rows)`);
       return $.html(table);
     }
-  } catch (e) {}
+    
+    console.log(`  ⚠️ Debates table not found`);
+  } catch (e) {
+    console.error(`  ❌ Error extracting debates table:`, e.message);
+  }
   return '';
 }
 
 function extractQuestionsTable($) {
   try {
-    const table = $('#block-views-mp-related-views-block-2 table').first();
+    // Try multiple possible selectors for questions
+    let table = $('#block-views-mps-questions-block table').first();
+    
+    if (!table.length) {
+      table = $('#block-views-mp-questions-block table').first();
+    }
+    
+    if (!table.length) {
+      table = $('#block-views-mp-related-views-block-2 table').first();
+    }
+    
+    // Also try finding any section with "questions" in the heading
+    if (!table.length) {
+      $('section[id*="question"]').each((i, section) => {
+        const sectionTable = $(section).find('table').first();
+        if (sectionTable.length) {
+          table = sectionTable;
+          return false; // break loop
+        }
+      });
+    }
+    
     if (table.length) {
+      console.log(`  ✅ Questions table extracted (${table.find('tr').length} rows)`);
       return $.html(table);
     }
-  } catch (e) {}
+    
+    console.log(`  ⚠️ Questions table not found`);
+  } catch (e) {
+    console.error(`  ❌ Error extracting questions table:`, e.message);
+  }
   return '';
 }
-
 // ============================================================================
 // UTILITY FUNCTIONS
 // ============================================================================
