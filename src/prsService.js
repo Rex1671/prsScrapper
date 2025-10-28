@@ -584,28 +584,37 @@ function extractQuestionsTable($) {
 // ============================================================================
 
 function constructURLs(name, type, reduced = false) {
-  const nameSlug = name.toLowerCase()
-    .replace(/\./g, '')
-    .replace(/\s+/g, '-')
-    .replace(/[^a-z0-9-]/g, '');
-  
+  // Normalize and sanitize name
+  const nameSlug = name
+    .toLowerCase()
+    .replace(/\+/g, ' ')         // treat + as space
+    .replace(/\./g, '')          // remove dots
+    .replace(/\s+/g, '-')        // replace spaces with dashes
+    .replace(/[^a-z0-9-]/g, ''); // remove all other special chars
+
   const urls = [];
-  const baseURL = type === 'MP' 
-    ? 'https://prsindia.org/mptrack/18th-lok-sabha/'
-    : 'https://prsindia.org/mlatrack/';
-  
+  const baseURL =
+    type === 'MP'
+      ? 'https://prsindia.org/mptrack/18th-lok-sabha/'
+      : 'https://prsindia.org/mlatrack/';
+
   urls.push(`${baseURL}${nameSlug}`);
-  
+
   if (!reduced) {
-    const parts = name.split(' ');
+    const parts = name
+      .replace(/\+/g, ' ') // make sure we treat + as space here too
+      .trim()
+      .split(/\s+/);
+
     if (parts.length > 2) {
       const firstLast = `${parts[0]}-${parts[parts.length - 1]}`.toLowerCase();
       urls.push(`${baseURL}${firstLast}`);
     }
   }
-  
+
   return urls;
 }
+
 
 function validateMemberPage(html, type) {
   if (type === 'MP') {
