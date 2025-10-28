@@ -822,47 +822,154 @@ function extractMLAEducation($) {
 // HTML TABLE EXTRACTION - ROBUST HEADING-BASED APPROACH
 // ============================================================================
 
+// ============================================================================
+// HTML TABLE EXTRACTION - COMPREHENSIVE MULTI-STRATEGY APPROACH
+// ============================================================================
+
 function extractAttendanceTable($) {
   try {
-    // Strategy 1: Find by known IDs
-    let table = $('#block-views-mps-attendance-block table').first();
+    console.log('🔍 Extracting Attendance Table...');
+    let table = null;
     
-    if (!table.length) {
-      table = $('#block-views-mp-related-views-block-1 table').first();
+    // ========================================
+    // Strategy 1: Direct ID selectors
+    // ========================================
+    const knownIds = [
+      '#block-views-mps-attendance-block',
+      '#block-views-mp-related-views-block-1',
+      '#block-views-mp-attendance-block',
+      '#block-views-attendance-block'
+    ];
+    
+    for (const id of knownIds) {
+      table = $(`${id} table`).first();
+      if (table && table.length > 0) {
+        console.log(`  ✅ Found via ID: ${id}`);
+        break;
+      }
     }
     
-    // Strategy 2: Find section with "Attendance details" in h2
-    if (!table.length) {
-      $('section.block-views').each((i, section) => {
-        const heading = $(section).find('h2').text();
-        if (heading.toLowerCase().includes('attendance details')) {
-          const foundTable = $(section).find('table').first();
-          if (foundTable.length) {
-            table = foundTable;
-            return false; // break loop
+    // ========================================
+    // Strategy 2: Search by heading text
+    // ========================================
+    if (!table || !table.length) {
+      console.log('  🔄 Trying heading-based search...');
+      $('h2, h3, h4').each((i, heading) => {
+        const text = $(heading).text().toLowerCase();
+        if (text.includes('attendance details') || 
+            text.includes('attendance of') ||
+            text.match(/\d+%\s*attendance/)) {
+          
+          // Try to find table in parent section
+          const section = $(heading).closest('section');
+          if (section.length) {
+            const foundTable = section.find('table').first();
+            if (foundTable.length) {
+              table = foundTable;
+              console.log(`  ✅ Found via heading: "${$(heading).text().trim()}"`);
+              return false; // break
+            }
+          }
+          
+          // Try siblings
+          const siblingTable = $(heading).nextAll('table').first();
+          if (siblingTable.length) {
+            table = siblingTable;
+            console.log(`  ✅ Found as sibling of heading`);
+            return false;
+          }
+          
+          // Try in next div
+          const nextDiv = $(heading).next('div').find('table').first();
+          if (nextDiv.length) {
+            table = nextDiv;
+            console.log(`  ✅ Found in next div after heading`);
+            return false;
           }
         }
       });
     }
     
-    // Strategy 3: Find any section with ID containing "attendance"
-    if (!table.length) {
-      $('section[id*="attendance"]').each((i, section) => {
+    // ========================================
+    // Strategy 3: Search by section ID containing "attendance"
+    // ========================================
+    if (!table || !table.length) {
+      console.log('  🔄 Trying section ID search...');
+      $('section[id*="attendance" i]').each((i, section) => {
         const foundTable = $(section).find('table').first();
         if (foundTable.length) {
           table = foundTable;
+          console.log(`  ✅ Found in section: ${$(section).attr('id')}`);
           return false;
         }
       });
     }
     
-    if (table.length) {
+    // ========================================
+    // Strategy 4: Look for table with "Session" header
+    // ========================================
+    if (!table || !table.length) {
+      console.log('  🔄 Trying table header search...');
+      $('table').each((i, tbl) => {
+        const headers = $(tbl).find('thead th').map((j, th) => 
+          $(th).text().trim().toLowerCase()
+        ).get();
+        
+        // Attendance tables typically have "Session" and "Attendance" columns
+        if (headers.includes('session') && headers.includes('attendance')) {
+          table = $(tbl);
+          console.log(`  ✅ Found by table headers: [${headers.join(', ')}]`);
+          return false;
+        }
+      });
+    }
+    
+    // ========================================
+    // Strategy 5: Look in .table-responsive divs
+    // ========================================
+    if (!table || !table.length) {
+      console.log('  🔄 Trying .table-responsive search...');
+      $('.table-responsive').each((i, div) => {
+        const foundTable = $(div).find('table').first();
+        if (foundTable.length) {
+          const headers = foundTable.find('thead th').text().toLowerCase();
+          if (headers.includes('session') || headers.includes('attendance')) {
+            table = foundTable;
+            console.log(`  ✅ Found in .table-responsive div`);
+            return false;
+          }
+        }
+      });
+    }
+    
+    // ========================================
+    // Validate and return
+    // ========================================
+    if (table && table.length > 0) {
       const rowCount = table.find('tbody tr').length;
-      console.log(`  ✅ Attendance table extracted (${rowCount} rows)`);
+      const colCount = table.find('thead th').length;
+      console.log(`  ✅ Attendance table extracted (${rowCount} rows, ${colCount} columns)`);
+      
+      // Log headers for verification
+      const headers = table.find('thead th').map((i, th) => $(th).text().trim()).get();
+      console.log(`  📋 Headers: [${headers.join(', ')}]`);
+      
       return $.html(table);
     }
     
-    console.log(`  ⚠️ Attendance table not found`);
+    console.log(`  ⚠️ Attendance table not found after all strategies`);
+    
+    // Debug: Show all available sections
+    console.log(`  🔍 Available sections with tables:`);
+    $('section[id]').each((i, section) => {
+      const id = $(section).attr('id');
+      const hasTable = $(section).find('table').length > 0;
+      if (hasTable) {
+        const heading = $(section).find('h2, h3').first().text().trim().substring(0, 50);
+        console.log(`     - ${id}: "${heading}"`);
+      }
+    });
+    
   } catch (e) {
     console.error(`  ❌ Error extracting attendance table:`, e.message);
   }
@@ -871,40 +978,72 @@ function extractAttendanceTable($) {
 
 function extractDebatesTable($) {
   try {
-    // Strategy 1: Find by known IDs
-    let table = $('#block-views-mps-debate-related-views-block table').first();
+    console.log('🔍 Extracting Debates Table...');
+    let table = null;
     
-    if (!table.length) {
-      table = $('#block-views-mp-related-views-block table').first();
+    // Strategy 1: Direct ID selectors
+    const knownIds = [
+      '#block-views-mps-debate-related-views-block',
+      '#block-views-mp-related-views-block',
+      '#block-views-mp-debate-block',
+      '#block-views-debate-block'
+    ];
+    
+    for (const id of knownIds) {
+      table = $(`${id} table`).first();
+      if (table && table.length > 0) {
+        console.log(`  ✅ Found via ID: ${id}`);
+        break;
+      }
     }
     
-    // Strategy 2: Find section with "Debates" in h2
-    if (!table.length) {
-      $('section.block-views').each((i, section) => {
-        const heading = $(section).find('h2').text();
-        if (heading.toLowerCase().includes('debates') || 
-            heading.toLowerCase().includes('participated in')) {
-          const foundTable = $(section).find('table').first();
-          if (foundTable.length) {
-            table = foundTable;
-            return false; // break loop
+    // Strategy 2: Search by heading
+    if (!table || !table.length) {
+      $('h2, h3, h4').each((i, heading) => {
+        const text = $(heading).text().toLowerCase();
+        if (text.includes('debates') || 
+            text.includes('participated in') ||
+            text.match(/\d+\s*debates/)) {
+          
+          const section = $(heading).closest('section');
+          if (section.length) {
+            const foundTable = section.find('table').first();
+            if (foundTable.length) {
+              table = foundTable;
+              console.log(`  ✅ Found via heading`);
+              return false;
+            }
           }
         }
       });
     }
     
-    // Strategy 3: Find any section with ID containing "debate"
-    if (!table.length) {
-      $('section[id*="debate"]').each((i, section) => {
+    // Strategy 3: Section ID search
+    if (!table || !table.length) {
+      $('section[id*="debate" i]').each((i, section) => {
         const foundTable = $(section).find('table').first();
         if (foundTable.length) {
           table = foundTable;
+          console.log(`  ✅ Found in section: ${$(section).attr('id')}`);
           return false;
         }
       });
     }
     
-    if (table.length) {
+    // Strategy 4: Table header search
+    if (!table || !table.length) {
+      $('table').each((i, tbl) => {
+        const headers = $(tbl).find('thead th').text().toLowerCase();
+        if ((headers.includes('debate') && headers.includes('date')) ||
+            headers.includes('debate type')) {
+          table = $(tbl);
+          console.log(`  ✅ Found by headers`);
+          return false;
+        }
+      });
+    }
+    
+    if (table && table.length > 0) {
       const rowCount = table.find('tbody tr').length;
       console.log(`  ✅ Debates table extracted (${rowCount} rows)`);
       return $.html(table);
@@ -919,57 +1058,73 @@ function extractDebatesTable($) {
 
 function extractQuestionsTable($) {
   try {
-    // Strategy 1: Find section with "Questions details" or "questions asked" in h2
+    console.log('🔍 Extracting Questions Table...');
     let table = null;
     
-    $('section.block-views').each((i, section) => {
-      const heading = $(section).find('h2').text();
-      if (heading.toLowerCase().includes('questions details') || 
-          heading.toLowerCase().includes('questions asked')) {
-        const foundTable = $(section).find('table').first();
-        if (foundTable.length) {
-          table = foundTable;
-          return false; // break loop
-        }
-      }
-    });
+    // Strategy 1: Direct ID selectors
+    const knownIds = [
+      '#block-views-mps-questions-block',
+      '#block-views-mp-questions-block',
+      '#block-views-mp-related-views-block-2',
+      '#block-views-questions-block'
+    ];
     
-    // Strategy 2: Find by any ID containing "question" (handles variations like block-views-mp-related-views-block-2222)
+    for (const id of knownIds) {
+      table = $(`${id} table`).first();
+      if (table && table.length > 0) {
+        console.log(`  ✅ Found via ID: ${id}`);
+        break;
+      }
+    }
+    
+    // Strategy 2: Search by heading
     if (!table || !table.length) {
-      $('section[id*="question"]').each((i, section) => {
+      $('h2, h3, h4').each((i, heading) => {
+        const text = $(heading).text().toLowerCase();
+        if (text.includes('questions details') || 
+            text.includes('questions asked') ||
+            text.match(/\d+\s*questions/)) {
+          
+          const section = $(heading).closest('section');
+          if (section.length) {
+            const foundTable = section.find('table').first();
+            if (foundTable.length) {
+              table = foundTable;
+              console.log(`  ✅ Found via heading`);
+              return false;
+            }
+          }
+        }
+      });
+    }
+    
+    // Strategy 3: Section ID search
+    if (!table || !table.length) {
+      $('section[id*="question" i]').each((i, section) => {
         const foundTable = $(section).find('table').first();
         if (foundTable.length) {
           table = foundTable;
+          console.log(`  ✅ Found in section: ${$(section).attr('id')}`);
           return false;
         }
       });
     }
     
-    // Strategy 3: Find by known IDs
-    if (!table || !table.length) {
-      table = $('#block-views-mps-questions-block table').first();
-    }
-    
-    if (!table || !table.length) {
-      table = $('#block-views-mp-questions-block table').first();
-    }
-    
-    if (!table || !table.length) {
-      table = $('#block-views-mp-related-views-block-2 table').first();
-    }
-    
-    // Strategy 4: Find table with "Ministry or Category" header (unique to questions table)
+    // Strategy 4: Table header search (unique to questions)
     if (!table || !table.length) {
       $('table').each((i, tbl) => {
-        const headers = $(tbl).find('thead th').text();
-        if (headers.includes('Ministry or Category') || headers.includes('Question Type')) {
+        const headers = $(tbl).find('thead th').text().toLowerCase();
+        if (headers.includes('ministry or category') || 
+            headers.includes('question type') ||
+            (headers.includes('title') && headers.includes('type') && headers.includes('ministry'))) {
           table = $(tbl);
+          console.log(`  ✅ Found by headers`);
           return false;
         }
       });
     }
     
-    if (table && table.length) {
+    if (table && table.length > 0) {
       const rowCount = table.find('tbody tr').length;
       console.log(`  ✅ Questions table extracted (${rowCount} rows)`);
       return $.html(table);
