@@ -1,4 +1,4 @@
-// src/prsService.js - FIXED VERSION with robust extraction
+// src/prsService.js - UPDATED VERSION with Enhanced Error Handling
 import * as cheerio from 'cheerio';
 import pLimit from 'p-limit';
 import { fetchHTML } from './webextract.js';
@@ -8,12 +8,16 @@ const limit = pLimit(8);
 export async function getPRSData(name, type, constituency = null, state = null) {
   console.log(`🔍 [PRS] Fetching ${name} (${type})`);
   
+  let urlsChecked = [];
+  
   try {
     const result = await tryFetchWithType(name, type, false);
+    urlsChecked = result.urlsChecked || [];
     
     if (result.found) {
       result.searchedAs = type;
       result.foundAs = type;
+      result.urlsChecked = urlsChecked;
       return result;
     }
 
@@ -21,28 +25,35 @@ export async function getPRSData(name, type, constituency = null, state = null) 
     console.log(`⚠️ [PRS] Trying alternate: ${alternateType}`);
     
     const altResult = await tryFetchWithType(name, alternateType, true);
+    urlsChecked = [...urlsChecked, ...(altResult.urlsChecked || [])];
     
     if (altResult.found) {
       altResult.searchedAs = type;
       altResult.foundAs = alternateType;
+      altResult.urlsChecked = urlsChecked;
       return altResult;
     }
 
-    return getEmptyResponse();
-
+    return { 
+      ...getEmptyResponse(), 
+      urlsChecked 
+    };
+    
   } catch (error) {
-    console.error(`❌ [PRS] Error: ${error.message}`);
-    return getEmptyResponse();
+    console.error(`❌ [PRS] Error in getPRSData: ${error.message}`);
+    throw new Error(`Failed to fetch PRS data: ${error.message}`);
   }
 }
 
 async function tryFetchWithType(name, type, reduced = false) {
   const urls = constructURLs(name, type, reduced);
+  const urlsChecked = [];
   
   console.log(`🔗 [PRS] Checking ${urls.length} URLs in parallel`);
 
-  const fetchPromises = urls.map((url, index) => 
+  const fetchPromises = urls.map((url, index) =>
     limit(async () => {
+      urlsChecked.push(url);
       try {
         const startTime = Date.now();
         const html = await fetchHTML(url);
@@ -53,33 +64,50 @@ async function tryFetchWithType(name, type, reduced = false) {
           return { url, html, success: true, duration };
         }
         
+        console.log(`❌ [${index}] Invalid page or not found - URL: ${url}`);
         return { url, html: null, success: false };
         
       } catch (err) {
-        return { url, html: null, success: false };
+        console.error(`❌ [${index}] Error fetching ${url}: ${err.message}`);
+        return { url, html: null, success: false, error: err.message };
       }
     })
   );
 
-  const results = await Promise.allSettled(fetchPromises);
-  
-  for (const result of results) {
-    if (result.status === 'fulfilled' && result.value.success) {
-      const { url, html } = result.value;
-      
-      const parsedData = parseToFlatFormat(html, type);
-      
-      if (parsedData.name && parsedData.name !== 'Unknown') {
-        console.log(`✅ [PRS] Successfully parsed: ${parsedData.name}`);
-        return {
-          found: true,
-          data: parsedData
-        };
+  try {
+    const results = await Promise.allSettled(fetchPromises);
+
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value.success) {
+        const { url, html } = result.value;
+        
+        try {
+          const parsedData = parseToFlatFormat(html, type);
+          
+          if (parsedData.name && parsedData.name !== 'Unknown') {
+            console.log(`✅ [PRS] Successfully parsed: ${parsedData.name}`);
+            return {
+              found: true,
+              data: parsedData,
+              urlsChecked,
+              sourceUrl: url
+            };
+          }
+        } catch (parseError) {
+          console.error(`❌ Error parsing HTML from ${url}: ${parseError.message}`);
+        }
       }
     }
-  }
 
-  return getEmptyResponse();
+    return { 
+      ...getEmptyResponse(), 
+      urlsChecked 
+    };
+    
+  } catch (err) {
+    console.error(`❌ Error in tryFetchWithType: ${err.message}`);
+    throw err;
+  }
 }
 
 // ============================================================================
@@ -87,106 +115,128 @@ async function tryFetchWithType(name, type, reduced = false) {
 // ============================================================================
 
 function parseToFlatFormat(html, type) {
-  const $ = cheerio.load(html);
-  
-  console.log(`📄 [PRS] Parsing to flat format (${type})...`);
-  
-  // Check if data is available
-  const dataNotAvailable = $('.text-center h3').text().includes('Data not available');
-  
-  if (type === 'MP') {
-    return parseMPData($, html, dataNotAvailable);
-  } else {
-    return parseMLAData($, html, dataNotAvailable);
+  try {
+    const $ = cheerio.load(html);
+    
+    console.log(`📄 [PRS] Parsing to flat format (${type})...`);
+    
+    // Check if data is available
+    const dataNotAvailable = $('.text-center h3').text().includes('Data not available');
+    
+    if (type === 'MP') {
+      return parseMPData($, html, dataNotAvailable);
+    } else {
+      return parseMLAData($, html, dataNotAvailable);
+    }
+  } catch (error) {
+    console.error(`❌ Error in parseToFlatFormat: ${error.message}`);
+    throw error;
   }
 }
 
 function parseMPData($, html, dataNotAvailable) {
-  // Extract all performance metrics with multiple fallback strategies
-  const performance = extractParliamentaryPerformance($);
-  
-  const data = {
-    type: 'MP',
+  try {
+    // Extract all performance metrics with multiple fallback strategies
+    const performance = extractParliamentaryPerformance($);
     
-    // Basic Info
-    name: extractName($),
-    imageUrl: extractImage($),
-    state: extractState($),
-    constituency: extractConstituency($),
-    party: extractParty($),
+    const data = {
+      type: 'MP',
+      
+      // Basic Info
+      name: extractName($),
+      imageUrl: extractImage($),
+      state: extractState($),
+      constituency: extractConstituency($),
+      party: extractParty($),
+      
+      // Term Info
+      termStart: extractTermStart($),
+      termEnd: extractTermEnd($),
+      noOfTerm: extractNoOfTerm($),
+      membership: extractMembership($),
+      
+      // Personal Info
+      age: extractAge($),
+      gender: extractGender($),
+      education: extractEducation($),
+      
+      // Performance Metrics
+      ...performance,
+      
+      // HTML Tables
+      attendanceTable: extractAttendanceTable($),
+      debatesTable: extractDebatesTable($),
+      questionsTable: extractQuestionsTable($),
+      
+      // Metadata
+      dataAvailable: !dataNotAvailable,
+      extractedAt: new Date().toISOString()
+    };
     
-    // Term Info
-    termStart: extractTermStart($),
-    termEnd: extractTermEnd($),
-    noOfTerm: extractNoOfTerm($),
-    membership: extractMembership($),
+    logDataSummary(data);
     
-    // Personal Info
-    age: extractAge($),
-    gender: extractGender($),
-    education: extractEducation($),
-    
-    // Performance Metrics
-    ...performance,
-    
-    // HTML Tables
-    attendanceTable: extractAttendanceTable($),
-    debatesTable: extractDebatesTable($),
-    questionsTable: extractQuestionsTable($)
-  };
-  
-  logDataSummary(data);
-  
-  return data;
+    return data;
+  } catch (error) {
+    console.error(`❌ Error in parseMPData: ${error.message}`);
+    throw error;
+  }
 }
 
 function parseMLAData($, html, dataNotAvailable) {
-  const data = {
-    type: 'MLA',
+  try {
+    const data = {
+      type: 'MLA',
+      
+      // Basic Info
+      name: extractMLAName($),
+      imageUrl: extractMLAImage($),
+      state: extractState($),
+      constituency: extractMLAConstituency($),
+      party: extractParty($),
+      
+      // Term Info
+      termStart: extractMLATermStart($),
+      termEnd: extractMLATermEnd($),
+      noOfTerm: extractNoOfTerm($),
+      membership: extractMLAMembership($),
+      
+      // Personal Info
+      age: extractMLAAge($),
+      gender: extractGender($),
+      education: extractMLAEducation($),
+      
+      // Performance Data (usually not available for MLAs)
+      attendance: 'N/A',
+      natAttendance: 'N/A',
+      stateAttendance: 'N/A',
+      debates: 'N/A',
+      natDebates: 'N/A',
+      stateDebates: 'N/A',
+      questions: 'N/A',
+      natQuestions: 'N/A',
+      stateQuestions: 'N/A',
+      pmb: 'N/A',
+      natPMB: 'N/A',
+      statePMB: 'N/A',
+      
+      // HTML Tables
+      attendanceTable: '',
+      debatesTable: '',
+      questionsTable: '',
+      
+      // Metadata
+      dataAvailable: !dataNotAvailable,
+      note: dataNotAvailable ? 'Data not available' : 'Member data is taken from the election affidavits',
+      extractedAt: new Date().toISOString()
+    };
     
-    // Basic Info
-    name: extractMLAName($),
-    imageUrl: extractMLAImage($),
-    state: extractState($),
-    constituency: extractMLAConstituency($),
-    party: extractParty($),
+    logDataSummary(data);
     
-    // Term Info
-    termStart: extractMLATermStart($),
-    termEnd: extractMLATermEnd($),
-    membership: extractMLAMembership($),
-    
-    // Personal Info
-    age: extractMLAAge($),
-    gender: extractGender($),
-    education: extractMLAEducation($),
-    
-    // Performance Data (usually not available for MLAs)
-    attendance: 'N/A',
-    natAttendance: 'N/A',
-    stateAttendance: 'N/A',
-    debates: 'N/A',
-    natDebates: 'N/A',
-    stateDebates: 'N/A',
-    questions: 'N/A',
-    natQuestions: 'N/A',
-    stateQuestions: 'N/A',
-    pmb: 'N/A',
-    natPMB: 'N/A',
-    statePMB: 'N/A',
-    
-    // HTML Tables
-    attendanceTable: '',
-    debatesTable: '',
-    questionsTable: '',
-    
-    // Note
-    note: dataNotAvailable ? 'Data not available' : 'Member data is taken from the election affidavits'
-  };
-  
-  logDataSummary(data);
-  
-  return data;
+    return data;
+  } catch (error) {
+    console.error(`❌ Error in parseMLAData: ${error.message}`);
+    throw error;
+  }
 }
 
 // ============================================================================
@@ -211,7 +261,7 @@ function extractParliamentaryPerformance($) {
 
   try {
     console.log('📊 Extracting parliamentary performance metrics...');
-
+    
     // ========================================
     // STRATEGY 1: Direct field-name selectors
     // ========================================
@@ -235,7 +285,7 @@ function extractParliamentaryPerformance($) {
     let pmb = $('.mp-pmb .field-name-field-source .field-item').first().text().trim();
     let natPMB = $('.mp-pmb .field-name-field-national-pmb .field-item').first().text().trim();
     let statePMB = $('.mp-pmb .field-name-field-state-pmb .field-item').first().text().trim();
-
+    
     // ========================================
     // STRATEGY 2: Fallback - use div.attendance/debate/questions/pmb structure
     // ========================================
@@ -271,7 +321,7 @@ function extractParliamentaryPerformance($) {
       if (pmbItems.length >= 2) natPMB = $(pmbItems[1]).text().trim();
       if (pmbItems.length >= 3) statePMB = $(pmbItems[2]).text().trim();
     }
-
+    
     // ========================================
     // STRATEGY 3: Parse from span labels
     // ========================================
@@ -288,7 +338,7 @@ function extractParliamentaryPerformance($) {
         }
       });
     }
-
+    
     // ========================================
     // Assign to metrics object
     // ========================================
@@ -305,7 +355,7 @@ function extractParliamentaryPerformance($) {
       metrics.stateAttendance = stateAttendance;
       console.log(`  ✅ State Attendance: ${metrics.stateAttendance}`);
     }
-
+    
     if (debates) {
       metrics.debates = debates;
       console.log(`  ✅ Debates: ${metrics.debates}`);
@@ -318,7 +368,7 @@ function extractParliamentaryPerformance($) {
       metrics.stateDebates = stateDebates;
       console.log(`  ✅ State Debates: ${metrics.stateDebates}`);
     }
-
+    
     if (questions) {
       metrics.questions = questions;
       console.log(`  ✅ Questions: ${metrics.questions}`);
@@ -331,7 +381,7 @@ function extractParliamentaryPerformance($) {
       metrics.stateQuestions = stateQuestions;
       console.log(`  ✅ State Questions: ${metrics.stateQuestions}`);
     }
-
+    
     if (pmb) {
       metrics.pmb = pmb || '0';
       console.log(`  ✅ PMB: ${metrics.pmb}`);
@@ -352,7 +402,7 @@ function extractParliamentaryPerformance($) {
     } else {
       metrics.statePMB = 'N/A';
     }
-
+    
     console.log('📊 Final extracted metrics:', metrics);
     
     // Log the HTML structure for debugging if nothing was found
@@ -363,9 +413,9 @@ function extractParliamentaryPerformance($) {
     }
     
   } catch (e) {
-    console.error('❌ Error extracting parliamentary performance:', e);
+    console.error('❌ Error extracting parliamentary performance:', e.message);
   }
-
+  
   return metrics;
 }
 
@@ -377,7 +427,9 @@ function extractName($) {
   try {
     const name = $('.mp-name h1 a, .mp-name h1, .field-name-title-field .field-item').first().text().trim();
     if (name) return name;
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error extracting name:', e.message);
+  }
   return 'Unknown';
 }
 
@@ -387,7 +439,9 @@ function extractImage($) {
     if (img) {
       return img.startsWith('http') ? img : `https://prsindia.org${img}`;
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error extracting image:', e.message);
+  }
   return '';
 }
 
@@ -399,13 +453,15 @@ function extractState($) {
       if (label.includes('State')) {
         const stateText = $(elem).find('a').text().trim();
         if (stateText) {
-          foundState = stateText.replace(/\(\s*\d+\s*more\s*(MPs?|MLAs?)\s*\)/gi, '').trim();
+          foundState = stateText.replace(/\s*\d+\s*more\s*(MPs?|MLAs?)\s*/gi, '').trim();
           return false;
         }
       }
     });
     return foundState;
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error extracting state:', e.message);
+  }
   return 'Unknown';
 }
 
@@ -413,7 +469,9 @@ function extractConstituency($) {
   try {
     const constituency = $('.mp_constituency').first().text().replace('Constituency :', '').trim();
     if (constituency) return constituency;
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error extracting constituency:', e.message);
+  }
   return 'Unknown';
 }
 
@@ -425,13 +483,15 @@ function extractParty($) {
       if (label.includes('Party')) {
         const partyText = $(elem).find('a').text().trim();
         if (partyText) {
-          foundParty = partyText.replace(/\(\s*\d+\s*more\s*(MPs?|MLAs?)\s*\)/gi, '').trim();
+          foundParty = partyText.replace(/\s*\d+\s*more\s*(MPs?|MLAs?)\s*/gi, '').trim();
           return false;
         }
       }
     });
     return foundParty;
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error extracting party:', e.message);
+  }
   return 'Unknown';
 }
 
@@ -439,7 +499,9 @@ function extractTermStart($) {
   try {
     const start = $('.term_start .field-name-field-date-of-introduction .field-item').text().trim();
     if (start) return start;
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error extracting term start:', e.message);
+  }
   return 'N/A';
 }
 
@@ -447,7 +509,9 @@ function extractTermEnd($) {
   try {
     const end = $('.term_end').first().text().replace('End of Term :', '').trim();
     if (end) return end;
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error extracting term end:', e.message);
+  }
   return 'N/A';
 }
 
@@ -462,7 +526,9 @@ function extractNoOfTerm($) {
       }
     });
     return termNo;
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error extracting number of terms:', e.message);
+  }
   return 'N/A';
 }
 
@@ -477,7 +543,9 @@ function extractMembership($) {
       }
     });
     return membership;
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error extracting membership:', e.message);
+  }
   return 'N/A';
 }
 
@@ -485,7 +553,9 @@ function extractAge($) {
   try {
     const age = $('.personal_profile_parent .gender .field-label:contains("Age")').parent().text().replace('Age :', '').trim();
     if (age) return age;
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error extracting age:', e.message);
+  }
   return 'N/A';
 }
 
@@ -493,7 +563,9 @@ function extractGender($) {
   try {
     const gender = $('.personal_profile_parent .gender .field-label:contains("Gender")').parent().find('a').text().trim();
     if (gender) return gender;
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error extracting gender:', e.message);
+  }
   return 'N/A';
 }
 
@@ -501,7 +573,9 @@ function extractEducation($) {
   try {
     const edu = $('.personal_profile_parent .education .field-label:contains("Education")').parent().find('a').text().trim();
     if (edu) return edu;
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error extracting education:', e.message);
+  }
   return 'N/A';
 }
 
@@ -521,7 +595,9 @@ function extractMLAConstituency($) {
   try {
     const constituency = $('.mla_constituency, .mp_constituency').first().text().replace('Constituency :', '').trim();
     if (constituency) return constituency;
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error extracting MLA constituency:', e.message);
+  }
   return 'Unknown';
 }
 
@@ -555,7 +631,9 @@ function extractAttendanceTable($) {
     if (table.length) {
       return $.html(table);
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error extracting attendance table:', e.message);
+  }
   return '';
 }
 
@@ -565,7 +643,9 @@ function extractDebatesTable($) {
     if (table.length) {
       return $.html(table);
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error extracting debates table:', e.message);
+  }
   return '';
 }
 
@@ -575,7 +655,9 @@ function extractQuestionsTable($) {
     if (table.length) {
       return $.html(table);
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error('Error extracting questions table:', e.message);
+  }
   return '';
 }
 
@@ -602,22 +684,39 @@ function constructURLs(name, type, reduced = false) {
       const firstLast = `${parts[0]}-${parts[parts.length - 1]}`.toLowerCase();
       urls.push(`${baseURL}${firstLast}`);
     }
+    
+    // Try without middle names
+    if (parts.length === 3) {
+      const firstThird = `${parts[0]}-${parts[2]}`.toLowerCase();
+      urls.push(`${baseURL}${firstThird}`);
+    }
   }
   
   return urls;
 }
 
 function validateMemberPage(html, type) {
-  if (type === 'MP') {
-    return html.includes('mp-attendance') || html.includes('mp-debate') || html.includes('mp_state');
-  } else {
-    return html.includes('mla_state') || html.includes('mla_constituency');
+  try {
+    if (type === 'MP') {
+      return html.includes('mp-attendance') || 
+             html.includes('mp-debate') || 
+             html.includes('mp_state') ||
+             html.includes('mp-name');
+    } else {
+      return html.includes('mla_state') || 
+             html.includes('mla_constituency') ||
+             html.includes('mla-name');
+    }
+  } catch (e) {
+    console.error('Error validating member page:', e.message);
+    return false;
   }
 }
 
 function getEmptyResponse() {
   return {
     found: false,
+    urlsChecked: [],
     data: {
       type: 'Unknown',
       name: 'Unknown',
@@ -627,6 +726,8 @@ function getEmptyResponse() {
       party: 'N/A',
       termStart: 'N/A',
       termEnd: 'N/A',
+      noOfTerm: 'N/A',
+      membership: 'N/A',
       age: 'N/A',
       gender: 'N/A',
       education: 'N/A',
@@ -644,23 +745,17 @@ function getEmptyResponse() {
       statePMB: 'N/A',
       attendanceTable: '',
       debatesTable: '',
-      questionsTable: ''
+      questionsTable: '',
+      dataAvailable: false,
+      extractedAt: new Date().toISOString()
     }
   };
 }
 
 function logDataSummary(data) {
-
-    console.log(data)
   console.log('📋 Extracted Data Summary:');
-  console.log(`   Name: ${data.name}`);
-  console.log(`   Type: ${data.type}`);
-  console.log(`   State: ${data.state}`);
-  console.log(`   Constituency: ${data.constituency}`);
-  console.log(`   Party: ${data.party}`);
-  console.log(`   Attendance: ${data.attendance} (Nat: ${data.natAttendance}, State: ${data.stateAttendance})`);
-  console.log(`   Debates: ${data.debates} (Nat: ${data.natDebates}, State: ${data.stateDebates})`);
-  console.log(`   Questions: ${data.questions} (Nat: ${data.natQuestions}, State: ${data.stateQuestions})`);
-  console.log(`   PMB: ${data.pmb} (Nat: ${data.natPMB}, State: ${data.statePMB})`);
-}
-
+  console.log(`  Name: ${data.name}`);
+  console.log(`  Type: ${data.type}`);
+  console.log(`  State: ${data.state}`);
+  console.log(`  Constituency: ${data.constituency}`);
+  console.log(`  Party: 
