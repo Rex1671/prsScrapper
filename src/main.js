@@ -25,32 +25,47 @@ export async function main({ req, res, log, error }) {
     // Try different parsing methods for Appwrite compatibility
    // FIXED PARSING SECTION - Replace lines after "PARSE REQUEST" comment
 
+// FIXED PARSING SECTION WITH AGGRESSIVE DEBUGGING
+
 if (req.method === 'POST') {
+  // Log EVERYTHING about the request body
+  log(`🔍 DEBUG: req.body exists? ${!!req.body}`);
+  log(`🔍 DEBUG: req.body type: ${typeof req.body}`);
+  log(`🔍 DEBUG: req.body value: ${JSON.stringify(req.body)}`);
+  log(`🔍 DEBUG: req.body length: ${req.body?.length || 'N/A'}`);
+  log(`🔍 DEBUG: req.body first 100 chars: ${typeof req.body === 'string' ? req.body.substring(0, 100) : 'N/A'}`);
+  
   // Method 1: Check if body is already a parsed object
   if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
     params = req.body;
     log('✅ Parsed from req.body (object)');
   }
   // Method 2: Check if body is a string (MOST COMMON IN APPWRITE)
-  else if (req.body && typeof req.body === 'string') {
+  else if (typeof req.body === 'string') {
+    log(`🔍 Attempting to parse string body of length ${req.body.length}`);
     try {
       // Trim whitespace and parse
       const trimmed = req.body.trim();
-      if (trimmed) {
+      log(`🔍 Trimmed length: ${trimmed.length}`);
+      
+      if (trimmed.length > 0) {
         params = JSON.parse(trimmed);
         log('✅ Parsed from req.body (string)');
+        log(`✅ Parsed ${Object.keys(params).length} keys`);
       } else {
-        log('⚠️ Body string is empty');
+        log('⚠️ Body string is empty after trim');
         params = {};
       }
     } catch (e) {
-      log(`❌ Failed to parse body string: ${e.message}`);
-      log(`❌ Body content: ${req.body}`);
+      log(`❌ JSON Parse Error: ${e.message}`);
+      log(`❌ Body content (first 200 chars): ${req.body.substring(0, 200)}`);
+      log(`❌ Body content (full): ${req.body}`);
       params = {};
     }
   }
   // Method 3: Check bodyRaw (some Appwrite versions)
   else if (req.bodyRaw) {
+    log('🔍 Trying bodyRaw');
     try {
       params = JSON.parse(req.bodyRaw);
       log('✅ Parsed from req.bodyRaw');
@@ -61,6 +76,7 @@ if (req.method === 'POST') {
   }
   // Method 4: Check payload
   else if (req.payload) {
+    log('🔍 Trying payload');
     try {
       params = typeof req.payload === 'string' ? JSON.parse(req.payload) : req.payload;
       log('✅ Parsed from req.payload');
@@ -71,6 +87,7 @@ if (req.method === 'POST') {
   }
   else {
     log('⚠️ No valid POST body found in any location');
+    log(`🔍 Final check - req.body is: ${req.body}`);
     params = {};
   }
 } 
@@ -84,6 +101,9 @@ else {
   params = {};
 }
 
+// Enhanced logging
+log(`📋 Parsed params: ${JSON.stringify(params)}`);
+log(`📊 Param count: ${Object.keys(params).length}`);
 // Enhanced logging
 log(`📋 Parsed params: ${JSON.stringify(params)}`);
 log(`📊 Param count: ${Object.keys(params).length}`);
