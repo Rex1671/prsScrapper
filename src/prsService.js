@@ -1,4 +1,4 @@
-// src/prsService.js - Returns data in exact required format
+// src/prsService.js - FIXED VERSION with robust extraction
 import * as cheerio from 'cheerio';
 import pLimit from 'p-limit';
 import { fetchHTML } from './webextract.js';
@@ -49,7 +49,7 @@ async function tryFetchWithType(name, type, reduced = false) {
         const duration = Date.now() - startTime;
         
         if (html && html.length > 1000 && validateMemberPage(html, type)) {
-          console.log(`✅ [${index}] Found in ${duration}ms`);
+          console.log(`✅ [${index}] Found in ${duration}ms - URL: ${url}`);
           return { url, html, success: true, duration };
         }
         
@@ -102,7 +102,7 @@ function parseToFlatFormat(html, type) {
 }
 
 function parseMPData($, html, dataNotAvailable) {
-  // Extract all performance metrics at once
+  // Extract all performance metrics with multiple fallback strategies
   const performance = extractParliamentaryPerformance($);
   
   const data = {
@@ -126,7 +126,7 @@ function parseMPData($, html, dataNotAvailable) {
     gender: extractGender($),
     education: extractEducation($),
     
-    // Performance Metrics (from the extracted performance object)
+    // Performance Metrics
     ...performance,
     
     // HTML Tables
@@ -165,20 +165,17 @@ function parseMLAData($, html, dataNotAvailable) {
     attendance: 'N/A',
     natAttendance: 'N/A',
     stateAttendance: 'N/A',
-    
     debates: 'N/A',
     natDebates: 'N/A',
     stateDebates: 'N/A',
-    
     questions: 'N/A',
     natQuestions: 'N/A',
     stateQuestions: 'N/A',
-    
     pmb: 'N/A',
     natPMB: 'N/A',
     statePMB: 'N/A',
     
-    // HTML Tables (usually empty for MLAs)
+    // HTML Tables
     attendanceTable: '',
     debatesTable: '',
     questionsTable: '',
@@ -193,7 +190,7 @@ function parseMLAData($, html, dataNotAvailable) {
 }
 
 // ============================================================================
-// PARLIAMENTARY PERFORMANCE EXTRACTION - FIXED LOGIC
+// PARLIAMENTARY PERFORMANCE EXTRACTION - MULTI-STRATEGY APPROACH
 // ============================================================================
 
 function extractParliamentaryPerformance($) {
@@ -215,10 +212,86 @@ function extractParliamentaryPerformance($) {
   try {
     console.log('📊 Extracting parliamentary performance metrics...');
 
-    // ATTENDANCE - Using specific field-name classes
-    const attendance = $('.mp-attendance .field-name-field-attendance .field-item').first().text().trim();
-    const natAttendance = $('.mp-attendance .field-name-field-national-attendance .field-item').first().text().trim();
-    const stateAttendance = $('.mp-attendance .field-name-field-state-attendance .field-item').first().text().trim();
+    // ========================================
+    // STRATEGY 1: Direct field-name selectors
+    // ========================================
+    
+    // ATTENDANCE
+    let attendance = $('.mp-attendance .field-name-field-attendance .field-item').first().text().trim();
+    let natAttendance = $('.mp-attendance .field-name-field-national-attendance .field-item').first().text().trim();
+    let stateAttendance = $('.mp-attendance .field-name-field-state-attendance .field-item').first().text().trim();
+    
+    // DEBATES
+    let debates = $('.mp-debate .field-name-field-author .field-item').first().text().trim();
+    let natDebates = $('.mp-debate .field-name-field-national-debate .field-item').first().text().trim();
+    let stateDebates = $('.mp-debate .field-name-field-state-debate .field-item').first().text().trim();
+    
+    // QUESTIONS
+    let questions = $('.mp-questions .field-name-field-total-expenses-railway .field-item').first().text().trim();
+    let natQuestions = $('.mp-questions .field-name-field-national-questions .field-item').first().text().trim();
+    let stateQuestions = $('.mp-questions .field-name-field-state-questions .field-item').first().text().trim();
+    
+    // PMB
+    let pmb = $('.mp-pmb .field-name-field-source .field-item').first().text().trim();
+    let natPMB = $('.mp-pmb .field-name-field-national-pmb .field-item').first().text().trim();
+    let statePMB = $('.mp-pmb .field-name-field-state-pmb .field-item').first().text().trim();
+
+    // ========================================
+    // STRATEGY 2: Fallback - use div.attendance/debate/questions/pmb structure
+    // ========================================
+    
+    if (!attendance || attendance === '') {
+      const attItems = $('.mp-attendance .attendance .field-item');
+      console.log(`  Fallback: Found ${attItems.length} attendance field-items`);
+      if (attItems.length >= 1) attendance = $(attItems[0]).text().trim();
+      if (attItems.length >= 2) natAttendance = $(attItems[1]).text().trim();
+      if (attItems.length >= 3) stateAttendance = $(attItems[2]).text().trim();
+    }
+    
+    if (!debates || debates === '') {
+      const debItems = $('.mp-debate .debate .field-item');
+      console.log(`  Fallback: Found ${debItems.length} debate field-items`);
+      if (debItems.length >= 1) debates = $(debItems[0]).text().trim();
+      if (debItems.length >= 2) natDebates = $(debItems[1]).text().trim();
+      if (debItems.length >= 3) stateDebates = $(debItems[2]).text().trim();
+    }
+    
+    if (!questions || questions === '') {
+      const qItems = $('.mp-questions .questions .field-item');
+      console.log(`  Fallback: Found ${qItems.length} question field-items`);
+      if (qItems.length >= 1) questions = $(qItems[0]).text().trim();
+      if (qItems.length >= 2) natQuestions = $(qItems[1]).text().trim();
+      if (qItems.length >= 3) stateQuestions = $(qItems[2]).text().trim();
+    }
+    
+    if (!pmb || pmb === '') {
+      const pmbItems = $('.mp-pmb .pmb .field-item');
+      console.log(`  Fallback: Found ${pmbItems.length} PMB field-items`);
+      if (pmbItems.length >= 1) pmb = $(pmbItems[0]).text().trim();
+      if (pmbItems.length >= 2) natPMB = $(pmbItems[1]).text().trim();
+      if (pmbItems.length >= 3) statePMB = $(pmbItems[2]).text().trim();
+    }
+
+    // ========================================
+    // STRATEGY 3: Parse from span labels
+    // ========================================
+    
+    if (!attendance || attendance === '') {
+      $('.mp-attendance span').each((i, elem) => {
+        const label = $(elem).text().trim();
+        if (label === 'Selected MP') {
+          attendance = $(elem).next().find('.field-item').first().text().trim();
+        } else if (label === 'National Average') {
+          natAttendance = $(elem).next().find('.field-item').first().text().trim();
+        } else if (label === 'State Average') {
+          stateAttendance = $(elem).next().find('.field-item').first().text().trim();
+        }
+      });
+    }
+
+    // ========================================
+    // Assign to metrics object
+    // ========================================
     
     if (attendance) {
       metrics.attendance = attendance;
@@ -233,11 +306,6 @@ function extractParliamentaryPerformance($) {
       console.log(`  ✅ State Attendance: ${metrics.stateAttendance}`);
     }
 
-    // DEBATES - Using specific field-name classes
-    const debates = $('.mp-debate .field-name-field-author .field-item').first().text().trim();
-    const natDebates = $('.mp-debate .field-name-field-national-debate .field-item').first().text().trim();
-    const stateDebates = $('.mp-debate .field-name-field-state-debate .field-item').first().text().trim();
-    
     if (debates) {
       metrics.debates = debates;
       console.log(`  ✅ Debates: ${metrics.debates}`);
@@ -251,11 +319,6 @@ function extractParliamentaryPerformance($) {
       console.log(`  ✅ State Debates: ${metrics.stateDebates}`);
     }
 
-    // QUESTIONS - Using specific field-name classes
-    const questions = $('.mp-questions .field-name-field-total-expenses-railway .field-item').first().text().trim();
-    const natQuestions = $('.mp-questions .field-name-field-national-questions .field-item').first().text().trim();
-    const stateQuestions = $('.mp-questions .field-name-field-state-questions .field-item').first().text().trim();
-    
     if (questions) {
       metrics.questions = questions;
       console.log(`  ✅ Questions: ${metrics.questions}`);
@@ -269,26 +332,21 @@ function extractParliamentaryPerformance($) {
       console.log(`  ✅ State Questions: ${metrics.stateQuestions}`);
     }
 
-    // PRIVATE MEMBER'S BILLS - Using specific field-name classes
-    const pmb = $('.mp-pmb .field-name-field-source .field-item').first().text().trim();
-    const natPMB = $('.mp-pmb .field-name-field-national-pmb .field-item').first().text().trim();
-    const statePMB = $('.mp-pmb .field-name-field-state-pmb .field-item').first().text().trim();
-    
     if (pmb) {
-      metrics.pmb = pmb;
+      metrics.pmb = pmb || '0';
       console.log(`  ✅ PMB: ${metrics.pmb}`);
     } else {
       metrics.pmb = '0';
     }
     
     if (natPMB) {
-      metrics.natPMB = natPMB;
+      metrics.natPMB = natPMB || '0';
       console.log(`  ✅ National PMB: ${metrics.natPMB}`);
     } else {
       metrics.natPMB = '0';
     }
     
-    if (statePMB) {
+    if (statePMB && statePMB !== '') {
       metrics.statePMB = statePMB;
       console.log(`  ✅ State PMB: ${metrics.statePMB}`);
     } else {
@@ -296,6 +354,14 @@ function extractParliamentaryPerformance($) {
     }
 
     console.log('📊 Final extracted metrics:', metrics);
+    
+    // Log the HTML structure for debugging if nothing was found
+    if (metrics.attendance === 'N/A') {
+      console.log('⚠️ WARNING: No performance data extracted!');
+      console.log('HTML structure of .mp-attendance:');
+      console.log($('.mp-attendance').html()?.substring(0, 500));
+    }
+    
   } catch (e) {
     console.error('❌ Error extracting parliamentary performance:', e);
   }
