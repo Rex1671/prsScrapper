@@ -23,62 +23,70 @@ export async function main({ req, res, log, error }) {
     log(`📦 Request payload: ${req.payload ? 'present' : 'not present'}`);
 
     // Try different parsing methods for Appwrite compatibility
-    if (req.method === 'POST') {
-      // Method 1: Check if body is already parsed object
-      if (req.body && typeof req.body === 'object') {
-        params = req.body;
-        log('✅ Parsed from req.body (object)');
-      }
-      // Method 2: Check bodyRaw (Appwrite often uses this)
-      else if (req.bodyRaw) {
-        try {
-          params = JSON.parse(req.bodyRaw);
-          log('✅ Parsed from req.bodyRaw');
-        } catch (e) {
-          log(`⚠️ Failed to parse bodyRaw: ${e.message}`);
-          params = {};
-        }
-      }
-      // Method 3: Check if body is a string
-      else if (req.body && typeof req.body === 'string') {
-        try {
-          params = JSON.parse(req.body);
-          log('✅ Parsed from req.body (string)');
-        } catch (e) {
-          log(`⚠️ Failed to parse body string: ${e.message}`);
-          params = {};
-        }
-      }
-      // Method 4: Check payload (some Appwrite versions)
-      else if (req.payload) {
-        try {
-          params = typeof req.payload === 'string' ? JSON.parse(req.payload) : req.payload;
-          log('✅ Parsed from req.payload');
-        } catch (e) {
-          log(`⚠️ Failed to parse payload: ${e.message}`);
-          params = {};
-        }
-      }
-      // Method 5: Check headers for JSON
-      else if (req.headers['content-type']?.includes('application/json')) {
-        log('⚠️ Content-Type is JSON but no body found');
+   // FIXED PARSING SECTION - Replace lines after "PARSE REQUEST" comment
+
+if (req.method === 'POST') {
+  // Method 1: Check if body is already a parsed object
+  if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
+    params = req.body;
+    log('✅ Parsed from req.body (object)');
+  }
+  // Method 2: Check if body is a string (MOST COMMON IN APPWRITE)
+  else if (req.body && typeof req.body === 'string') {
+    try {
+      // Trim whitespace and parse
+      const trimmed = req.body.trim();
+      if (trimmed) {
+        params = JSON.parse(trimmed);
+        log('✅ Parsed from req.body (string)');
+      } else {
+        log('⚠️ Body string is empty');
         params = {};
       }
-      else {
-        log('⚠️ No valid POST body found');
-        params = {};
-      }
-    } 
-    // GET request - use query parameters
-    else if (req.method === 'GET') {
-      params = req.query || req.queries || {};
-      log('✅ Parsed from query parameters');
-    }
-    else {
-      log(`⚠️ Unsupported method: ${req.method}`);
+    } catch (e) {
+      log(`❌ Failed to parse body string: ${e.message}`);
+      log(`❌ Body content: ${req.body}`);
       params = {};
     }
+  }
+  // Method 3: Check bodyRaw (some Appwrite versions)
+  else if (req.bodyRaw) {
+    try {
+      params = JSON.parse(req.bodyRaw);
+      log('✅ Parsed from req.bodyRaw');
+    } catch (e) {
+      log(`⚠️ Failed to parse bodyRaw: ${e.message}`);
+      params = {};
+    }
+  }
+  // Method 4: Check payload
+  else if (req.payload) {
+    try {
+      params = typeof req.payload === 'string' ? JSON.parse(req.payload) : req.payload;
+      log('✅ Parsed from req.payload');
+    } catch (e) {
+      log(`⚠️ Failed to parse payload: ${e.message}`);
+      params = {};
+    }
+  }
+  else {
+    log('⚠️ No valid POST body found in any location');
+    params = {};
+  }
+} 
+// GET request - use query parameters
+else if (req.method === 'GET') {
+  params = req.query || req.queries || {};
+  log('✅ Parsed from query parameters');
+}
+else {
+  log(`⚠️ Unsupported method: ${req.method}`);
+  params = {};
+}
 
+// Enhanced logging
+log(`📋 Parsed params: ${JSON.stringify(params)}`);
+log(`📊 Param count: ${Object.keys(params).length}`);
     // Log what we received
     log(`📋 Parsed params: ${JSON.stringify(params)}`);
 
