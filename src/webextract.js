@@ -13,7 +13,7 @@ const TIMEOUT = 15000; // 15 seconds
 export async function fetchHTML(url, retries = MAX_RETRIES) {
   try {
     console.log(`🌐 Fetching: ${url} (${MAX_RETRIES - retries + 1}/${MAX_RETRIES})`);
-    
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT);
 
@@ -37,28 +37,28 @@ export async function fetchHTML(url, retries = MAX_RETRIES) {
 
     if (!response.ok) {
       console.log(`❌ HTTP ${response.status} - ${url}`);
-      
+
       // Retry on server errors (5xx) or rate limiting (429)
       if ((response.status >= 500 || response.status === 429) && retries > 0) {
         console.log(`🔄 Retrying in ${RETRY_DELAY}ms...`);
         await sleep(RETRY_DELAY);
         return fetchHTML(url, retries - 1);
       }
-      
+
       return null;
     }
 
     const html = await response.text();
-    
+
     // Validate HTML content
     if (!html || html.length < 500) {
       console.log(`⚠️ Response too short (${html?.length || 0} bytes)`);
-      
+
       if (retries > 0) {
         await sleep(RETRY_DELAY);
         return fetchHTML(url, retries - 1);
       }
-      
+
       return null;
     }
 
@@ -145,7 +145,7 @@ export async function isURLAccessible(url) {
 
     clearTimeout(timeoutId);
     return response.ok;
-    
+
   } catch (err) {
     return false;
   }
