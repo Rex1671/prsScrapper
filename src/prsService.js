@@ -1,53 +1,110 @@
-/**
- * Get PRS data for a member
- * @param {string} name - Member name (required)
- * @param {string} type - 'MP' or 'MLA' (required)
- * @param {string|null} constituency - Constituency name (optional)
- * @param {string|null} state - State name (optional)
- * @returns {Promise<Object>}
- */
-export async function getPRSData(name, type, constituency = null, state = null) {
-  console.log(`🔍 [PRS] Fetching ${name} (${type})`);
+// src/main.js - Appwrite Function Entry Point
+import { getPRSData } from './prsService.js';
+
+export default async ({ req, res, log, error }) => {
+  const startTime = Date.now();
   
-  if (constituency) {
-    console.log(`   📍 Constituency: ${constituency}`);
-  }
-  if (state) {
-    console.log(`   📍 State: ${state}`);
-  }
-
-  let urlsChecked = [];
-
   try {
-    const result = await tryFetchWithType(name, type, false);
-    urlsChecked = result.urlsChecked || [];
+    // Parse request parameters
+    let params;
+    
+    if (req.method === 'POST' && req.body) {
+      params = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    } else if (req.method === 'GET') {
+      params = req.query;
+    } else {
+      params = {};
+    }
+
+    const { name, type, constituency, state } = params;
+
+    log(`🔍 [PRS] Request received: ${name} (${type})`);
+
+    // Validation
+    if (!name || !type) {
+      return res.json({
+        success: false,
+        error: 'Missing required parameters: name, type',
+        usage: {
+          example: {
+            name: 'Rahul Gandhi',
+            type: 'MP'
+          }
+        }
+      }, 400);
+    }
+
+    if (!['MP', 'MLA'].includes(type.toUpperCase())) {
+      return res.json({
+        success: false,
+        error: 'Invalid type. Must be MP or MLA',
+        received: type
+      }, 400);
+    }
+
+    // Fetch data
+    const result = await getPRSData(
+      name.trim(), 
+      type.toUpperCase(), 
+      constituency?.trim(), 
+      state?.trim()
+    );
+    
+    const duration = Date.now() - startTime;
+    log(`✅ [PRS] Completed in ${duration}ms`);
 
     if (result.found) {
-      result.searchedAs = type;
-      result.foundAs = type;
-      result.urlsChecked = urlsChecked;
-      return result;
+      return res.json({
+        success: true,
+        data: result.data,
+        meta: {
+          searchedAs: result.searchedAs || type,
+          foundAs: result.foundAs || type,
+          source: 'PRS India',
+          scrapedAt: new Date().toISOString()
+        },
+        timing: {
+          duration: `${duration}ms`,
+          timestamp: new Date().toISOString()
+        }
+      }, 200);
+    } else {
+      return res.json({
+        success: false,
+        message: 'Member not found in PRS India database',
+        searched: { 
+          name, 
+          type, 
+          constituency: constituency || 'N/A', 
+          state: state || 'N/A' 
+        },
+        timing: { 
+          duration: `${duration}ms` 
+        },
+        suggestions: [
+          'Verify the spelling of the name',
+          'Try alternate name formats (e.g., "Narendra Modi" vs "Modi, Narendra")',
+          'Check if the member is currently serving',
+          `Try alternate type (${type === 'MP' ? 'MLA' : 'MP'})`
+        ]
+      }, 404);
     }
 
-    const alternateType = type === 'MLA' ? 'MP' : 'MLA';
-    console.log(`⚠️ [PRS] Trying alternate: ${alternateType}`);
+  } catch (err) {
+    const duration = Date.now() - startTime;
+    error(`❌ [PRS] Error: ${err.message}`);
+    error(err.stack);
 
-    const altResult = await tryFetchWithType(name, alternateType, true);
-    urlsChecked = [...urlsChecked, ...(altResult.urlsChecked || [])];
-
-    if (altResult.found) {
-      altResult.searchedAs = type;
-      altResult.foundAs = alternateType;
-      altResult.urlsChecked = urlsChecked;
-      return altResult;
-    }
-
-    return { 
-      ...getEmptyResponse(), 
-      urlsChecked 
-    };
-  } catch (error) {
-    console.error(`❌ [PRS] Error in getPRSData: ${error.message}`);
-    throw new Error(`Failed to fetch PRS data: ${error.message}`);
+    return res.json({
+      success: false,
+      error: err.message,
+      type: err.name,
+      timing: { 
+        duration: `${duration}ms` 
+      },
+      debug: process.env.NODE_ENV === 'development' ? {
+        stack: err.stack
+      } : undefined
+    }, 500);
   }
-}
+};
