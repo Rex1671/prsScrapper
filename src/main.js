@@ -3,6 +3,8 @@ import { getPRSData } from './prsService.js';
 
 /**
  * Main Appwrite Function Handler
+ * Required: name, type
+ * Optional: constituency, state
  */
 export async function main({ req, res, log, error }) {
   const startTime = Date.now();
@@ -25,26 +27,35 @@ export async function main({ req, res, log, error }) {
 
     log(`🔍 [PRS] Request received: ${JSON.stringify(params)}`);
 
-    // Validation
+    // ========================================
+    // VALIDATION - Only name and type required
+    // ========================================
     errorLocation = 'validation';
 
     if (!name || !type) {
       return res.json({
         success: false,
         error: {
-          message: 'Missing required parameters: name and type are mandatory',
+          message: 'Missing required parameters',
+          details: 'Both "name" and "type" are required',
           location: errorLocation,
-          code: 'MISSING_PARAMS'
+          code: 'MISSING_REQUIRED_PARAMS'
         },
         received: params,
         required: {
-          name: name || 'MISSING',
-          type: type || 'MISSING',
-          constituency: constituency || 'OPTIONAL',
-          state: state || 'OPTIONAL'
+          name: name || '❌ MISSING (required)',
+          type: type || '❌ MISSING (required)'
+        },
+        optional: {
+          constituency: constituency || 'not provided',
+          state: state || 'not provided'
         },
         usage: {
-          example: {
+          minimumExample: {
+            name: 'Rahul Gandhi',
+            type: 'MP'
+          },
+          fullExample: {
             name: 'Rahul Gandhi',
             type: 'MP',
             constituency: 'Wayanad',
@@ -59,32 +70,59 @@ export async function main({ req, res, log, error }) {
       return res.json({
         success: false,
         error: {
-          message: 'Invalid type. Must be MP or MLA',
+          message: 'Invalid type parameter',
+          details: 'Type must be either "MP" or "MLA"',
           location: errorLocation,
           code: 'INVALID_TYPE'
         },
-        received: params,
+        received: {
+          name,
+          type,
+          constituency: constituency || 'not provided',
+          state: state || 'not provided'
+        },
         validation: {
           providedType: type,
-          allowedTypes: ['MP', 'MLA']
+          allowedTypes: ['MP', 'MLA'],
+          caseSensitive: false
         },
         timestamp: new Date().toISOString()
       }, 400);
     }
 
-    // Fetch data
+    // ========================================
+    // FETCH DATA
+    // ========================================
     errorLocation = 'fetching_data';
-    log(`📊 Starting data fetch for: ${name} (${type})`);
+    
+    const processedParams = {
+      name: name.trim(),
+      type: type.toUpperCase(),
+      constituency: constituency?.trim() || null,
+      state: state?.trim() || null
+    };
+
+    log(`📊 Starting data fetch for: ${processedParams.name} (${processedParams.type})`);
+    
+    if (processedParams.constituency) {
+      log(`   Constituency filter: ${processedParams.constituency}`);
+    }
+    if (processedParams.state) {
+      log(`   State filter: ${processedParams.state}`);
+    }
 
     const result = await getPRSData(
-      name.trim(), 
-      type.toUpperCase(), 
-      constituency?.trim(), 
-      state?.trim()
+      processedParams.name,
+      processedParams.type,
+      processedParams.constituency,
+      processedParams.state
     );
 
     const duration = Date.now() - startTime;
 
+    // ========================================
+    // SUCCESS RESPONSE
+    // ========================================
     if (result.found) {
       log(`✅ [PRS] Successfully found data in ${duration}ms`);
       
@@ -92,78 +130,90 @@ export async function main({ req, res, log, error }) {
         success: true,
         data: result.data,
         meta: {
-          searchedAs: result.searchedAs || type,
-          foundAs: result.foundAs || type,
+          searchedAs: result.searchedAs || processedParams.type,
+          foundAs: result.foundAs || processedParams.type,
           source: 'PRS India',
-          scrapedAt: new Date().toISOString()
+          scrapedAt: new Date().toISOString(),
+          note: result.foundAs !== result.searchedAs 
+            ? `Searched as ${result.searchedAs}, but found as ${result.foundAs}`
+            : undefined
         },
         request: {
           received: params,
-          processed: {
-            name: name.trim(),
-            type: type.toUpperCase(),
-            constituency: constituency?.trim() || null,
-            state: state?.trim() || null
-          }
+          processed: processedParams
         },
         performance: {
           duration: `${duration}ms`,
           timestamp: new Date().toISOString()
         }
       }, 200);
-      
-    } else {
-      log(`⚠️ [PRS] Member not found in ${duration}ms`);
-      
-      return res.json({
-        success: false,
-        error: {
-          message: 'Member not found in PRS India database',
-          location: 'data_not_found',
-          code: 'NOT_FOUND'
-        },
-        received: params,
-        searched: { 
-          name: name.trim(), 
-          type: type.toUpperCase(), 
-          constituency: constituency?.trim() || 'N/A', 
-          state: state?.trim() || 'N/A',
-          urlsChecked: result.urlsChecked || []
-        },
-        suggestions: [
-          'Verify the spelling of the name',
-          'Try alternate name formats (e.g., "Narendra Modi" vs "Modi, Narendra")',
-          'Check if the member is currently serving',
-          `Try alternate type (${type === 'MP' ? 'MLA' : 'MP'})`,
-          'Some members might not have data available on PRS India'
-        ],
-        performance: { 
-          duration: `${duration}ms`,
-          timestamp: new Date().toISOString()
-        }
-      }, 404);
     }
+
+    // ========================================
+    // NOT FOUND RESPONSE
+    // ========================================
+    log(`⚠️ [PRS] Member not found in ${duration}ms`);
+    
+    return res.json({
+      success: false,
+      error: {
+        message: 'Member not found',
+        details: 'No matching member found in PRS India database',
+        location: 'data_not_found',
+        code: 'NOT_FOUND'
+      },
+      received: params,
+      searched: {
+        name: processedParams.name,
+        type: processedParams.type,
+        constituency: processedParams.constituency || 'N/A (not specified)',
+        state: processedParams.state || 'N/A (not specified)',
+        urlsChecked: result.urlsChecked || [],
+        totalUrlsChecked: result.urlsChecked?.length || 0
+      },
+      suggestions: [
+        'Verify the spelling of the name',
+        'Try different name formats:',
+        '  • Full name: "Narendra Damodardas Modi"',
+        '  • Common name: "Narendra Modi"',
+        '  • Last name first: "Modi Narendra"',
+        'Check if the member is currently in the 18th Lok Sabha (for MPs)',
+        `Try the alternate type: ${processedParams.type === 'MP' ? 'MLA' : 'MP'}`,
+        'Some members may not have data available on PRS India yet',
+        'For MLAs, ensure they are from a state legislature tracked by PRS'
+      ],
+      performance: {
+        duration: `${duration}ms`,
+        timestamp: new Date().toISOString()
+      }
+    }, 404);
+
   } catch (err) {
+    // ========================================
+    // ERROR RESPONSE
+    // ========================================
     const duration = Date.now() - startTime;
 
-    // Enhanced error logging
     error(`❌ [PRS] Error at ${errorLocation}: ${err.message}`);
     error(`Stack trace: ${err.stack}`);
     error(`Parameters received: ${JSON.stringify(params)}`);
 
-    // Determine error type and message
+    // Determine error type
     let errorType = 'UNKNOWN_ERROR';
-    let userMessage = 'An unexpected error occurred while fetching data';
+    let userMessage = 'An unexpected error occurred';
 
     if (err.message.includes('JSON')) {
       errorType = 'PARSE_ERROR';
       userMessage = 'Invalid JSON format in request body';
-    } else if (err.message.includes('fetch')) {
+    } else if (err.message.includes('fetch') || err.message.includes('network')) {
       errorType = 'NETWORK_ERROR';
       userMessage = 'Failed to fetch data from PRS India website';
-    } else if (err.message.includes('timeout')) {
+    } else if (err.message.includes('timeout') || err.message.includes('ETIMEDOUT')) {
       errorType = 'TIMEOUT_ERROR';
       userMessage = 'Request timed out while fetching data';
+    } else if (err.message.includes('ENOTFOUND') || err.message.includes('DNS')) {
+      errorType = 'DNS_ERROR';
+      userMessage = 'Unable to reach PRS India website';
     }
 
     return res.json({
@@ -182,7 +232,7 @@ export async function main({ req, res, log, error }) {
         errorName: err.name,
         timestamp: new Date().toISOString()
       },
-      performance: { 
+      performance: {
         duration: `${duration}ms`,
         failedAt: errorLocation
       }
@@ -190,5 +240,5 @@ export async function main({ req, res, log, error }) {
   }
 }
 
-// Also export as default for compatibility
+// Export as default for Appwrite
 export default main;
