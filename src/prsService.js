@@ -818,18 +818,47 @@ function extractMLAEducation($) {
 // HTML TABLE EXTRACTION - FIXED SELECTORS
 // ============================================================================
 
+// ============================================================================
+// HTML TABLE EXTRACTION - ROBUST HEADING-BASED APPROACH
+// ============================================================================
+
 function extractAttendanceTable($) {
   try {
-    // Correct selector based on actual HTML structure
+    // Strategy 1: Find by known IDs
     let table = $('#block-views-mps-attendance-block table').first();
     
-    // Fallback to old selector if needed
     if (!table.length) {
       table = $('#block-views-mp-related-views-block-1 table').first();
     }
     
+    // Strategy 2: Find section with "Attendance details" in h2
+    if (!table.length) {
+      $('section.block-views').each((i, section) => {
+        const heading = $(section).find('h2').text();
+        if (heading.toLowerCase().includes('attendance details')) {
+          const foundTable = $(section).find('table').first();
+          if (foundTable.length) {
+            table = foundTable;
+            return false; // break loop
+          }
+        }
+      });
+    }
+    
+    // Strategy 3: Find any section with ID containing "attendance"
+    if (!table.length) {
+      $('section[id*="attendance"]').each((i, section) => {
+        const foundTable = $(section).find('table').first();
+        if (foundTable.length) {
+          table = foundTable;
+          return false;
+        }
+      });
+    }
+    
     if (table.length) {
-      console.log(`  ✅ Attendance table extracted (${table.find('tr').length} rows)`);
+      const rowCount = table.find('tbody tr').length;
+      console.log(`  ✅ Attendance table extracted (${rowCount} rows)`);
       return $.html(table);
     }
     
@@ -842,16 +871,42 @@ function extractAttendanceTable($) {
 
 function extractDebatesTable($) {
   try {
-    // Correct selector based on actual HTML structure
+    // Strategy 1: Find by known IDs
     let table = $('#block-views-mps-debate-related-views-block table').first();
     
-    // Fallback to old selector if needed
     if (!table.length) {
       table = $('#block-views-mp-related-views-block table').first();
     }
     
+    // Strategy 2: Find section with "Debates" in h2
+    if (!table.length) {
+      $('section.block-views').each((i, section) => {
+        const heading = $(section).find('h2').text();
+        if (heading.toLowerCase().includes('debates') || 
+            heading.toLowerCase().includes('participated in')) {
+          const foundTable = $(section).find('table').first();
+          if (foundTable.length) {
+            table = foundTable;
+            return false; // break loop
+          }
+        }
+      });
+    }
+    
+    // Strategy 3: Find any section with ID containing "debate"
+    if (!table.length) {
+      $('section[id*="debate"]').each((i, section) => {
+        const foundTable = $(section).find('table').first();
+        if (foundTable.length) {
+          table = foundTable;
+          return false;
+        }
+      });
+    }
+    
     if (table.length) {
-      console.log(`  ✅ Debates table extracted (${table.find('tr').length} rows)`);
+      const rowCount = table.find('tbody tr').length;
+      console.log(`  ✅ Debates table extracted (${rowCount} rows)`);
       return $.html(table);
     }
     
@@ -864,30 +919,59 @@ function extractDebatesTable($) {
 
 function extractQuestionsTable($) {
   try {
-    // Try multiple possible selectors for questions
-    let table = $('#block-views-mps-questions-block table').first();
+    // Strategy 1: Find section with "Questions details" or "questions asked" in h2
+    let table = null;
     
-    if (!table.length) {
-      table = $('#block-views-mp-questions-block table').first();
-    }
-    
-    if (!table.length) {
-      table = $('#block-views-mp-related-views-block-2 table').first();
-    }
-    
-    // Also try finding any section with "questions" in the heading
-    if (!table.length) {
-      $('section[id*="question"]').each((i, section) => {
-        const sectionTable = $(section).find('table').first();
-        if (sectionTable.length) {
-          table = sectionTable;
+    $('section.block-views').each((i, section) => {
+      const heading = $(section).find('h2').text();
+      if (heading.toLowerCase().includes('questions details') || 
+          heading.toLowerCase().includes('questions asked')) {
+        const foundTable = $(section).find('table').first();
+        if (foundTable.length) {
+          table = foundTable;
           return false; // break loop
+        }
+      }
+    });
+    
+    // Strategy 2: Find by any ID containing "question" (handles variations like block-views-mp-related-views-block-2222)
+    if (!table || !table.length) {
+      $('section[id*="question"]').each((i, section) => {
+        const foundTable = $(section).find('table').first();
+        if (foundTable.length) {
+          table = foundTable;
+          return false;
         }
       });
     }
     
-    if (table.length) {
-      console.log(`  ✅ Questions table extracted (${table.find('tr').length} rows)`);
+    // Strategy 3: Find by known IDs
+    if (!table || !table.length) {
+      table = $('#block-views-mps-questions-block table').first();
+    }
+    
+    if (!table || !table.length) {
+      table = $('#block-views-mp-questions-block table').first();
+    }
+    
+    if (!table || !table.length) {
+      table = $('#block-views-mp-related-views-block-2 table').first();
+    }
+    
+    // Strategy 4: Find table with "Ministry or Category" header (unique to questions table)
+    if (!table || !table.length) {
+      $('table').each((i, tbl) => {
+        const headers = $(tbl).find('thead th').text();
+        if (headers.includes('Ministry or Category') || headers.includes('Question Type')) {
+          table = $(tbl);
+          return false;
+        }
+      });
+    }
+    
+    if (table && table.length) {
+      const rowCount = table.find('tbody tr').length;
+      console.log(`  ✅ Questions table extracted (${rowCount} rows)`);
       return $.html(table);
     }
     
