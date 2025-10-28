@@ -15,11 +15,11 @@ export default async ({ req, res, log, error }) => {
     } else {
       params = {};
     }
-
+    
     const { name, type, constituency, state } = params;
-
+    
     log(`🔍 [PRS] Request received: ${name} (${type})`);
-
+    
     // Validation
     if (!name || !type) {
       return res.json({
@@ -33,7 +33,7 @@ export default async ({ req, res, log, error }) => {
         }
       }, 400);
     }
-
+    
     if (!['MP', 'MLA'].includes(type.toUpperCase())) {
       return res.json({
         success: false,
@@ -41,7 +41,7 @@ export default async ({ req, res, log, error }) => {
         received: type
       }, 400);
     }
-
+    
     // Fetch data
     const result = await getPRSData(
       name.trim(), 
@@ -52,7 +52,7 @@ export default async ({ req, res, log, error }) => {
     
     const duration = Date.now() - startTime;
     log(`✅ [PRS] Completed in ${duration}ms`);
-
+    
     if (result.found) {
       return res.json({
         success: true,
@@ -89,12 +89,12 @@ export default async ({ req, res, log, error }) => {
         ]
       }, 404);
     }
-
+    
   } catch (err) {
     const duration = Date.now() - startTime;
     error(`❌ [PRS] Error: ${err.message}`);
     error(err.stack);
-
+    
     return res.json({
       success: false,
       error: err.message,
