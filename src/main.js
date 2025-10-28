@@ -1,4 +1,4 @@
-// src/main.js - Appwrite Function Entry Point
+// src/main.js - Appwrite Function Entry Point (FIXED)
 import { getPRSData } from './prsService.js';
 
 /**
@@ -12,20 +12,77 @@ export async function main({ req, res, log, error }) {
   let errorLocation = 'initialization';
 
   try {
-    // Parse request parameters
+    // ========================================
+    // PARSE REQUEST - Multiple fallback methods
+    // ========================================
     errorLocation = 'parsing_request';
 
-    if (req.method === 'POST' && req.body) {
-      params = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-    } else if (req.method === 'GET') {
-      params = req.query;
-    } else {
+    log(`📥 Request method: ${req.method}`);
+    log(`📦 Request body type: ${typeof req.body}`);
+    log(`📦 Request bodyRaw: ${req.bodyRaw ? 'present' : 'not present'}`);
+    log(`📦 Request payload: ${req.payload ? 'present' : 'not present'}`);
+
+    // Try different parsing methods for Appwrite compatibility
+    if (req.method === 'POST') {
+      // Method 1: Check if body is already parsed object
+      if (req.body && typeof req.body === 'object') {
+        params = req.body;
+        log('✅ Parsed from req.body (object)');
+      }
+      // Method 2: Check bodyRaw (Appwrite often uses this)
+      else if (req.bodyRaw) {
+        try {
+          params = JSON.parse(req.bodyRaw);
+          log('✅ Parsed from req.bodyRaw');
+        } catch (e) {
+          log(`⚠️ Failed to parse bodyRaw: ${e.message}`);
+          params = {};
+        }
+      }
+      // Method 3: Check if body is a string
+      else if (req.body && typeof req.body === 'string') {
+        try {
+          params = JSON.parse(req.body);
+          log('✅ Parsed from req.body (string)');
+        } catch (e) {
+          log(`⚠️ Failed to parse body string: ${e.message}`);
+          params = {};
+        }
+      }
+      // Method 4: Check payload (some Appwrite versions)
+      else if (req.payload) {
+        try {
+          params = typeof req.payload === 'string' ? JSON.parse(req.payload) : req.payload;
+          log('✅ Parsed from req.payload');
+        } catch (e) {
+          log(`⚠️ Failed to parse payload: ${e.message}`);
+          params = {};
+        }
+      }
+      // Method 5: Check headers for JSON
+      else if (req.headers['content-type']?.includes('application/json')) {
+        log('⚠️ Content-Type is JSON but no body found');
+        params = {};
+      }
+      else {
+        log('⚠️ No valid POST body found');
+        params = {};
+      }
+    } 
+    // GET request - use query parameters
+    else if (req.method === 'GET') {
+      params = req.query || req.queries || {};
+      log('✅ Parsed from query parameters');
+    }
+    else {
+      log(`⚠️ Unsupported method: ${req.method}`);
       params = {};
     }
 
-    const { name, type, constituency, state } = params;
+    // Log what we received
+    log(`📋 Parsed params: ${JSON.stringify(params)}`);
 
-    log(`🔍 [PRS] Request received: ${JSON.stringify(params)}`);
+    const { name, type, constituency, state } = params;
 
     // ========================================
     // VALIDATION - Only name and type required
@@ -33,6 +90,8 @@ export async function main({ req, res, log, error }) {
     errorLocation = 'validation';
 
     if (!name || !type) {
+      log(`❌ Validation failed - name: ${name}, type: ${type}`);
+      
       return res.json({
         success: false,
         error: {
@@ -42,6 +101,13 @@ export async function main({ req, res, log, error }) {
           code: 'MISSING_REQUIRED_PARAMS'
         },
         received: params,
+        debug: {
+          requestMethod: req.method,
+          bodyType: typeof req.body,
+          hasBodyRaw: !!req.bodyRaw,
+          hasPayload: !!req.payload,
+          contentType: req.headers['content-type'] || 'not provided'
+        },
         required: {
           name: name || '❌ MISSING (required)',
           type: type || '❌ MISSING (required)'
@@ -60,7 +126,9 @@ export async function main({ req, res, log, error }) {
             type: 'MP',
             constituency: 'Wayanad',
             state: 'Kerala'
-          }
+          },
+          postExample: `curl -X POST https://your-endpoint -H "Content-Type: application/json" -d '{"name":"Rahul Gandhi","type":"MP"}'`,
+          getExample: `curl "https://your-endpoint?name=Rahul+Gandhi&type=MP"`
         },
         timestamp: new Date().toISOString()
       }, 400);
@@ -105,10 +173,10 @@ export async function main({ req, res, log, error }) {
     log(`📊 Starting data fetch for: ${processedParams.name} (${processedParams.type})`);
     
     if (processedParams.constituency) {
-      log(`   Constituency filter: ${processedParams.constituency}`);
+      log(`   📍 Constituency filter: ${processedParams.constituency}`);
     }
     if (processedParams.state) {
-      log(`   State filter: ${processedParams.state}`);
+      log(`   📍 State filter: ${processedParams.state}`);
     }
 
     const result = await getPRSData(
@@ -133,6 +201,7 @@ export async function main({ req, res, log, error }) {
           searchedAs: result.searchedAs || processedParams.type,
           foundAs: result.foundAs || processedParams.type,
           source: 'PRS India',
+          sourceUrl: result.sourceUrl || 'N/A',
           scrapedAt: new Date().toISOString(),
           note: result.foundAs !== result.searchedAs 
             ? `Searched as ${result.searchedAs}, but found as ${result.foundAs}`
