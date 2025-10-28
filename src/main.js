@@ -5,19 +5,41 @@ export default async ({ req, res, log, error }) => {
   const startTime = Date.now();
   
   try {
-    // Parse request parameters
-    let params;
+    // Parse request parameters with better body handling
+    let params = {};
     
-    if (req.method === 'POST' && req.body) {
-      params = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+    if (req.method === 'POST') {
+      // Handle different body formats
+      if (req.body) {
+        if (typeof req.body === 'string') {
+          try {
+            params = JSON.parse(req.body);
+          } catch (e) {
+            log(`⚠️ Failed to parse body as JSON: ${e.message}`);
+            params = req.body;
+          }
+        } else if (typeof req.body === 'object') {
+          params = req.body;
+        }
+      }
+      
+      // Also check bodyJson if available (Appwrite sometimes uses this)
+      if (req.bodyJson) {
+        params = { ...params, ...req.bodyJson };
+      }
+      
+      // Fallback to query params if body is empty
+      if (Object.keys(params).length === 0 && req.query) {
+        params = req.query;
+      }
     } else if (req.method === 'GET') {
-      params = req.query;
-    } else {
-      params = {};
+      params = req.query || {};
     }
     
     const { name, type, constituency, state } = params;
     
+    // Log what we received for debugging
+    log(`📥 Received params: ${JSON.stringify(params)}`);
     log(`🔍 [PRS] Request received: ${name} (${type})`);
     
     // Validation
@@ -25,10 +47,19 @@ export default async ({ req, res, log, error }) => {
       return res.json({
         success: false,
         error: 'Missing required parameters: name, type',
+        received: params,
         usage: {
+          method: 'POST',
+          contentType: 'application/json',
           example: {
             name: 'Rahul Gandhi',
             type: 'MP'
+          },
+          alternateExample: {
+            name: 'Arvind Kejriwal',
+            type: 'MLA',
+            state: 'Delhi',
+            constituency: 'New Delhi'
           }
         }
       }, 400);
@@ -43,6 +74,7 @@ export default async ({ req, res, log, error }) => {
     }
     
     // Fetch data
+    log(`🚀 Starting data fetch for ${name}...`);
     const result = await getPRSData(
       name.trim(), 
       type.toUpperCase(), 
