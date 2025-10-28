@@ -1,4 +1,4 @@
-// src/prsService.js - FIXED VERSION with robust extraction
+// src/prsService.js - ENHANCED VERSION with Lok Sabha variations and numeric suffixes
 import * as cheerio from 'cheerio';
 import pLimit from 'p-limit';
 import { fetchHTML } from './webextract.js';
@@ -70,7 +70,7 @@ async function tryFetchWithType(name, type, reduced = false) {
       const parsedData = parseToFlatFormat(html, type);
       
       if (parsedData.name && parsedData.name !== 'Unknown') {
-        console.log(`✅ [PRS] Successfully parsed: ${parsedData.name}`);
+        console.log(`✅ [PRS] Successfully parsed: ${parsedData.name} from ${url}`);
         return {
           found: true,
           data: parsedData
@@ -580,7 +580,7 @@ function extractQuestionsTable($) {
 }
 
 // ============================================================================
-// HELPER FUNCTIONS
+// ENHANCED URL CONSTRUCTION WITH LOK SABHA VARIATIONS & NUMERIC SUFFIXES
 // ============================================================================
 
 function constructURLs(name, type, reduced = false) {
@@ -593,28 +593,66 @@ function constructURLs(name, type, reduced = false) {
     .replace(/[^a-z0-9-]/g, ''); // remove all other special chars
 
   const urls = [];
-  const baseURL =
-    type === 'MP'
-      ? 'https://prsindia.org/mptrack/18th-lok-sabha/'
-      : 'https://prsindia.org/mlatrack/';
+  
+  if (type === 'MP') {
+    // For MPs, try 18th, 17th, and 16th Lok Sabha
+    const lokSabhas = ['18th-lok-sabha', '17th-lok-sabha', '16th-lok-sabha'];
+    const numericSuffixes = ['', '-1', '-2', '-3']; // base name + numeric variations
+    
+    // Generate all combinations
+    for (const sabha of lokSabhas) {
+      for (const suffix of numericSuffixes) {
+        urls.push(`https://prsindia.org/mptrack/${sabha}/${nameSlug}${suffix}`);
+      }
+    }
+    
+    // If not reduced, also try first-last name combinations
+    if (!reduced) {
+      const parts = name
+        .replace(/\+/g, ' ')
+        .trim()
+        .split(/\s+/);
 
-  urls.push(`${baseURL}${nameSlug}`);
+      if (parts.length > 2) {
+        const firstLast = `${parts[0]}-${parts[parts.length - 1]}`.toLowerCase();
+        
+        for (const sabha of lokSabhas) {
+          for (const suffix of numericSuffixes) {
+            urls.push(`https://prsindia.org/mptrack/${sabha}/${firstLast}${suffix}`);
+          }
+        }
+      }
+    }
+    
+  } else {
+    // For MLAs - no Lok Sabha variations, but still use numeric suffixes
+    const baseURL = 'https://prsindia.org/mlatrack/';
+    const numericSuffixes = ['', '-1', '-2', '-3'];
+    
+    for (const suffix of numericSuffixes) {
+      urls.push(`${baseURL}${nameSlug}${suffix}`);
+    }
+    
+    if (!reduced) {
+      const parts = name
+        .replace(/\+/g, ' ')
+        .trim()
+        .split(/\s+/);
 
-  if (!reduced) {
-    const parts = name
-      .replace(/\+/g, ' ') // make sure we treat + as space here too
-      .trim()
-      .split(/\s+/);
-
-    if (parts.length > 2) {
-      const firstLast = `${parts[0]}-${parts[parts.length - 1]}`.toLowerCase();
-      urls.push(`${baseURL}${firstLast}`);
+      if (parts.length > 2) {
+        const firstLast = `${parts[0]}-${parts[parts.length - 1]}`.toLowerCase();
+        
+        for (const suffix of numericSuffixes) {
+          urls.push(`${baseURL}${firstLast}${suffix}`);
+        }
+      }
     }
   }
 
+  console.log(`🔗 Generated ${urls.length} URL variations for ${name} (${type})`);
+  
   return urls;
 }
-
 
 function validateMemberPage(html, type) {
   if (type === 'MP') {
