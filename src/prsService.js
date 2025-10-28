@@ -193,7 +193,7 @@ function parseMLAData($, html, dataNotAvailable) {
 }
 
 // ============================================================================
-// PARLIAMENTARY PERFORMANCE EXTRACTION - ALL METRICS AT ONCE
+// PARLIAMENTARY PERFORMANCE EXTRACTION - FIXED LOGIC
 // ============================================================================
 
 function extractParliamentaryPerformance($) {
@@ -215,75 +215,84 @@ function extractParliamentaryPerformance($) {
   try {
     console.log('📊 Extracting parliamentary performance metrics...');
 
-    // Attendance - Extract all field-items from mp-attendance section
-    const attItems = $('.mp-attendance .field-item');
-    console.log(`  Found ${attItems.length} attendance items`);
+    // ATTENDANCE - Using specific field-name classes
+    const attendance = $('.mp-attendance .field-name-field-attendance .field-item').first().text().trim();
+    const natAttendance = $('.mp-attendance .field-name-field-national-attendance .field-item').first().text().trim();
+    const stateAttendance = $('.mp-attendance .field-name-field-state-attendance .field-item').first().text().trim();
     
-    if (attItems.length >= 3) {
-      metrics.attendance = $(attItems[0]).text().trim();
-      metrics.natAttendance = $(attItems[1]).text().trim();
-      metrics.stateAttendance = $(attItems[2]).text().trim();
-      
+    if (attendance) {
+      metrics.attendance = attendance;
       console.log(`  ✅ Attendance: ${metrics.attendance}`);
+    }
+    if (natAttendance) {
+      metrics.natAttendance = natAttendance;
       console.log(`  ✅ National Attendance: ${metrics.natAttendance}`);
+    }
+    if (stateAttendance) {
+      metrics.stateAttendance = stateAttendance;
       console.log(`  ✅ State Attendance: ${metrics.stateAttendance}`);
-    } else {
-      console.log('  ⚠️ Not enough attendance items found');
     }
 
-    // Debates - Extract all field-items from mp-debate section
-    const debItems = $('.mp-debate .field-item');
-    console.log(`  Found ${debItems.length} debate items`);
+    // DEBATES - Using specific field-name classes
+    const debates = $('.mp-debate .field-name-field-author .field-item').first().text().trim();
+    const natDebates = $('.mp-debate .field-name-field-national-debate .field-item').first().text().trim();
+    const stateDebates = $('.mp-debate .field-name-field-state-debate .field-item').first().text().trim();
     
-    if (debItems.length >= 3) {
-      metrics.debates = $(debItems[0]).text().trim();
-      metrics.natDebates = $(debItems[1]).text().trim();
-      metrics.stateDebates = $(debItems[2]).text().trim();
-      
+    if (debates) {
+      metrics.debates = debates;
       console.log(`  ✅ Debates: ${metrics.debates}`);
+    }
+    if (natDebates) {
+      metrics.natDebates = natDebates;
       console.log(`  ✅ National Debates: ${metrics.natDebates}`);
+    }
+    if (stateDebates) {
+      metrics.stateDebates = stateDebates;
       console.log(`  ✅ State Debates: ${metrics.stateDebates}`);
-    } else {
-      console.log('  ⚠️ Not enough debate items found');
     }
 
-    // Questions - Extract all field-items from mp-questions section
-    const qItems = $('.mp-questions .field-item');
-    console.log(`  Found ${qItems.length} question items`);
+    // QUESTIONS - Using specific field-name classes
+    const questions = $('.mp-questions .field-name-field-total-expenses-railway .field-item').first().text().trim();
+    const natQuestions = $('.mp-questions .field-name-field-national-questions .field-item').first().text().trim();
+    const stateQuestions = $('.mp-questions .field-name-field-state-questions .field-item').first().text().trim();
     
-    if (qItems.length >= 3) {
-      metrics.questions = $(qItems[0]).text().trim();
-      metrics.natQuestions = $(qItems[1]).text().trim();
-      metrics.stateQuestions = $(qItems[2]).text().trim();
-      
+    if (questions) {
+      metrics.questions = questions;
       console.log(`  ✅ Questions: ${metrics.questions}`);
+    }
+    if (natQuestions) {
+      metrics.natQuestions = natQuestions;
       console.log(`  ✅ National Questions: ${metrics.natQuestions}`);
+    }
+    if (stateQuestions) {
+      metrics.stateQuestions = stateQuestions;
       console.log(`  ✅ State Questions: ${metrics.stateQuestions}`);
-    } else {
-      console.log('  ⚠️ Not enough question items found');
     }
 
-    // PMB (Private Member Bills) - Extract all field-items from mp-pmb section
-    const pmbItems = $('.mp-pmb .field-item');
-    console.log(`  Found ${pmbItems.length} PMB items`);
+    // PRIVATE MEMBER'S BILLS - Using specific field-name classes
+    const pmb = $('.mp-pmb .field-name-field-source .field-item').first().text().trim();
+    const natPMB = $('.mp-pmb .field-name-field-national-pmb .field-item').first().text().trim();
+    const statePMB = $('.mp-pmb .field-name-field-state-pmb .field-item').first().text().trim();
     
-    if (pmbItems.length >= 2) {
-      const pmbValue = $(pmbItems[0]).text().trim();
-      const natPMBValue = $(pmbItems[1]).text().trim();
-      
-      metrics.pmb = pmbValue !== '' ? pmbValue : '0';
-      metrics.natPMB = natPMBValue !== '' ? natPMBValue : '0';
-      
-      if (pmbItems.length >= 3) {
-        const statePMBValue = $(pmbItems[2]).text().trim();
-        metrics.statePMB = statePMBValue !== '' ? statePMBValue : 'N/A';
-      }
-      
+    if (pmb) {
+      metrics.pmb = pmb;
       console.log(`  ✅ PMB: ${metrics.pmb}`);
+    } else {
+      metrics.pmb = '0';
+    }
+    
+    if (natPMB) {
+      metrics.natPMB = natPMB;
       console.log(`  ✅ National PMB: ${metrics.natPMB}`);
+    } else {
+      metrics.natPMB = '0';
+    }
+    
+    if (statePMB) {
+      metrics.statePMB = statePMB;
       console.log(`  ✅ State PMB: ${metrics.statePMB}`);
     } else {
-      console.log('  ⚠️ Not enough PMB items found');
+      metrics.statePMB = 'N/A';
     }
 
     console.log('📊 Final extracted metrics:', metrics);
@@ -431,7 +440,158 @@ function extractEducation($) {
 }
 
 // ============================================================================
+// MLA SPECIFIC EXTRACTION FUNCTIONS
+// ============================================================================
+
+function extractMLAName($) {
+  return extractName($);
+}
+
+function extractMLAImage($) {
+  return extractImage($);
+}
+
+function extractMLAConstituency($) {
+  try {
+    const constituency = $('.mla_constituency, .mp_constituency').first().text().replace('Constituency :', '').trim();
+    if (constituency) return constituency;
+  } catch (e) {}
+  return 'Unknown';
+}
+
+function extractMLATermStart($) {
+  return extractTermStart($);
+}
+
+function extractMLATermEnd($) {
+  return extractTermEnd($);
+}
+
+function extractMLAMembership($) {
+  return extractMembership($);
+}
+
+function extractMLAAge($) {
+  return extractAge($);
+}
+
+function extractMLAEducation($) {
+  return extractEducation($);
+}
+
+// ============================================================================
 // HTML TABLE EXTRACTION
 // ============================================================================
 
-function extractAttendanceTable
+function extractAttendanceTable($) {
+  try {
+    const table = $('#block-views-mp-related-views-block-1 table').first();
+    if (table.length) {
+      return $.html(table);
+    }
+  } catch (e) {}
+  return '';
+}
+
+function extractDebatesTable($) {
+  try {
+    const table = $('#block-views-mp-related-views-block table').first();
+    if (table.length) {
+      return $.html(table);
+    }
+  } catch (e) {}
+  return '';
+}
+
+function extractQuestionsTable($) {
+  try {
+    const table = $('#block-views-mp-related-views-block-2 table').first();
+    if (table.length) {
+      return $.html(table);
+    }
+  } catch (e) {}
+  return '';
+}
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+function constructURLs(name, type, reduced = false) {
+  const nameSlug = name.toLowerCase()
+    .replace(/\./g, '')
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '');
+  
+  const urls = [];
+  const baseURL = type === 'MP' 
+    ? 'https://prsindia.org/mptrack/18th-lok-sabha/'
+    : 'https://prsindia.org/mlatrack/';
+  
+  urls.push(`${baseURL}${nameSlug}`);
+  
+  if (!reduced) {
+    const parts = name.split(' ');
+    if (parts.length > 2) {
+      const firstLast = `${parts[0]}-${parts[parts.length - 1]}`.toLowerCase();
+      urls.push(`${baseURL}${firstLast}`);
+    }
+  }
+  
+  return urls;
+}
+
+function validateMemberPage(html, type) {
+  if (type === 'MP') {
+    return html.includes('mp-attendance') || html.includes('mp-debate') || html.includes('mp_state');
+  } else {
+    return html.includes('mla_state') || html.includes('mla_constituency');
+  }
+}
+
+function getEmptyResponse() {
+  return {
+    found: false,
+    data: {
+      type: 'Unknown',
+      name: 'Unknown',
+      imageUrl: '',
+      state: 'N/A',
+      constituency: 'N/A',
+      party: 'N/A',
+      termStart: 'N/A',
+      termEnd: 'N/A',
+      age: 'N/A',
+      gender: 'N/A',
+      education: 'N/A',
+      attendance: 'N/A',
+      natAttendance: 'N/A',
+      stateAttendance: 'N/A',
+      debates: 'N/A',
+      natDebates: 'N/A',
+      stateDebates: 'N/A',
+      questions: 'N/A',
+      natQuestions: 'N/A',
+      stateQuestions: 'N/A',
+      pmb: 'N/A',
+      natPMB: 'N/A',
+      statePMB: 'N/A',
+      attendanceTable: '',
+      debatesTable: '',
+      questionsTable: ''
+    }
+  };
+}
+
+function logDataSummary(data) {
+  console.log('📋 Extracted Data Summary:');
+  console.log(`   Name: ${data.name}`);
+  console.log(`   Type: ${data.type}`);
+  console.log(`   State: ${data.state}`);
+  console.log(`   Constituency: ${data.constituency}`);
+  console.log(`   Party: ${data.party}`);
+  console.log(`   Attendance: ${data.attendance} (Nat: ${data.natAttendance}, State: ${data.stateAttendance})`);
+  console.log(`   Debates: ${data.debates} (Nat: ${data.natDebates}, State: ${data.stateDebates})`);
+  console.log(`   Questions: ${data.questions} (Nat: ${data.natQuestions}, State: ${data.stateQuestions})`);
+  console.log(`   PMB: ${data.pmb} (Nat: ${data.natPMB}, State: ${data.statePMB})`);
+}
