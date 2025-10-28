@@ -7,13 +7,13 @@ const limit = pLimit(8);
 
 export async function getPRSData(name, type, constituency = null, state = null) {
   console.log(`🔍 [PRS] Fetching ${name} (${type})`);
-  
+
   let urlsChecked = [];
-  
+
   try {
     const result = await tryFetchWithType(name, type, false);
     urlsChecked = result.urlsChecked || [];
-    
+
     if (result.found) {
       result.searchedAs = type;
       result.foundAs = type;
@@ -23,10 +23,10 @@ export async function getPRSData(name, type, constituency = null, state = null) 
 
     const alternateType = type === 'MLA' ? 'MP' : 'MLA';
     console.log(`⚠️ [PRS] Trying alternate: ${alternateType}`);
-    
+
     const altResult = await tryFetchWithType(name, alternateType, true);
     urlsChecked = [...urlsChecked, ...(altResult.urlsChecked || [])];
-    
+
     if (altResult.found) {
       altResult.searchedAs = type;
       altResult.foundAs = alternateType;
@@ -38,7 +38,6 @@ export async function getPRSData(name, type, constituency = null, state = null) 
       ...getEmptyResponse(), 
       urlsChecked 
     };
-    
   } catch (error) {
     console.error(`❌ [PRS] Error in getPRSData: ${error.message}`);
     throw new Error(`Failed to fetch PRS data: ${error.message}`);
@@ -48,7 +47,7 @@ export async function getPRSData(name, type, constituency = null, state = null) 
 async function tryFetchWithType(name, type, reduced = false) {
   const urls = constructURLs(name, type, reduced);
   const urlsChecked = [];
-  
+
   console.log(`🔗 [PRS] Checking ${urls.length} URLs in parallel`);
 
   const fetchPromises = urls.map((url, index) =>
@@ -58,7 +57,7 @@ async function tryFetchWithType(name, type, reduced = false) {
         const startTime = Date.now();
         const html = await fetchHTML(url);
         const duration = Date.now() - startTime;
-        
+
         if (html && html.length > 1000 && validateMemberPage(html, type)) {
           console.log(`✅ [${index}] Found in ${duration}ms - URL: ${url}`);
           return { url, html, success: true, duration };
@@ -103,7 +102,6 @@ async function tryFetchWithType(name, type, reduced = false) {
       ...getEmptyResponse(), 
       urlsChecked 
     };
-    
   } catch (err) {
     console.error(`❌ Error in tryFetchWithType: ${err.message}`);
     throw err;
@@ -117,12 +115,12 @@ async function tryFetchWithType(name, type, reduced = false) {
 function parseToFlatFormat(html, type) {
   try {
     const $ = cheerio.load(html);
-    
+
     console.log(`📄 [PRS] Parsing to flat format (${type})...`);
-    
+
     // Check if data is available
     const dataNotAvailable = $('.text-center h3').text().includes('Data not available');
-    
+
     if (type === 'MP') {
       return parseMPData($, html, dataNotAvailable);
     } else {
@@ -138,7 +136,7 @@ function parseMPData($, html, dataNotAvailable) {
   try {
     // Extract all performance metrics with multiple fallback strategies
     const performance = extractParliamentaryPerformance($);
-    
+
     const data = {
       type: 'MP',
       
@@ -172,9 +170,9 @@ function parseMPData($, html, dataNotAvailable) {
       dataAvailable: !dataNotAvailable,
       extractedAt: new Date().toISOString()
     };
-    
+
     logDataSummary(data);
-    
+
     return data;
   } catch (error) {
     console.error(`❌ Error in parseMPData: ${error.message}`);
@@ -186,7 +184,7 @@ function parseMLAData($, html, dataNotAvailable) {
   try {
     const data = {
       type: 'MLA',
-      
+
       // Basic Info
       name: extractMLAName($),
       imageUrl: extractMLAImage($),
@@ -229,9 +227,9 @@ function parseMLAData($, html, dataNotAvailable) {
       note: dataNotAvailable ? 'Data not available' : 'Member data is taken from the election affidavits',
       extractedAt: new Date().toISOString()
     };
-    
+
     logDataSummary(data);
-    
+
     return data;
   } catch (error) {
     console.error(`❌ Error in parseMLAData: ${error.message}`);
@@ -261,35 +259,35 @@ function extractParliamentaryPerformance($) {
 
   try {
     console.log('📊 Extracting parliamentary performance metrics...');
-    
+
     // ========================================
     // STRATEGY 1: Direct field-name selectors
     // ========================================
-    
+
     // ATTENDANCE
     let attendance = $('.mp-attendance .field-name-field-attendance .field-item').first().text().trim();
     let natAttendance = $('.mp-attendance .field-name-field-national-attendance .field-item').first().text().trim();
     let stateAttendance = $('.mp-attendance .field-name-field-state-attendance .field-item').first().text().trim();
-    
+
     // DEBATES
     let debates = $('.mp-debate .field-name-field-author .field-item').first().text().trim();
     let natDebates = $('.mp-debate .field-name-field-national-debate .field-item').first().text().trim();
     let stateDebates = $('.mp-debate .field-name-field-state-debate .field-item').first().text().trim();
-    
+
     // QUESTIONS
     let questions = $('.mp-questions .field-name-field-total-expenses-railway .field-item').first().text().trim();
     let natQuestions = $('.mp-questions .field-name-field-national-questions .field-item').first().text().trim();
     let stateQuestions = $('.mp-questions .field-name-field-state-questions .field-item').first().text().trim();
-    
+
     // PMB
     let pmb = $('.mp-pmb .field-name-field-source .field-item').first().text().trim();
     let natPMB = $('.mp-pmb .field-name-field-national-pmb .field-item').first().text().trim();
     let statePMB = $('.mp-pmb .field-name-field-state-pmb .field-item').first().text().trim();
-    
+
     // ========================================
     // STRATEGY 2: Fallback - use div.attendance/debate/questions/pmb structure
     // ========================================
-    
+
     if (!attendance || attendance === '') {
       const attItems = $('.mp-attendance .attendance .field-item');
       console.log(`  Fallback: Found ${attItems.length} attendance field-items`);
@@ -297,7 +295,7 @@ function extractParliamentaryPerformance($) {
       if (attItems.length >= 2) natAttendance = $(attItems[1]).text().trim();
       if (attItems.length >= 3) stateAttendance = $(attItems[2]).text().trim();
     }
-    
+
     if (!debates || debates === '') {
       const debItems = $('.mp-debate .debate .field-item');
       console.log(`  Fallback: Found ${debItems.length} debate field-items`);
@@ -305,7 +303,7 @@ function extractParliamentaryPerformance($) {
       if (debItems.length >= 2) natDebates = $(debItems[1]).text().trim();
       if (debItems.length >= 3) stateDebates = $(debItems[2]).text().trim();
     }
-    
+
     if (!questions || questions === '') {
       const qItems = $('.mp-questions .questions .field-item');
       console.log(`  Fallback: Found ${qItems.length} question field-items`);
@@ -313,7 +311,7 @@ function extractParliamentaryPerformance($) {
       if (qItems.length >= 2) natQuestions = $(qItems[1]).text().trim();
       if (qItems.length >= 3) stateQuestions = $(qItems[2]).text().trim();
     }
-    
+
     if (!pmb || pmb === '') {
       const pmbItems = $('.mp-pmb .pmb .field-item');
       console.log(`  Fallback: Found ${pmbItems.length} PMB field-items`);
@@ -321,11 +319,11 @@ function extractParliamentaryPerformance($) {
       if (pmbItems.length >= 2) natPMB = $(pmbItems[1]).text().trim();
       if (pmbItems.length >= 3) statePMB = $(pmbItems[2]).text().trim();
     }
-    
+
     // ========================================
     // STRATEGY 3: Parse from span labels
     // ========================================
-    
+
     if (!attendance || attendance === '') {
       $('.mp-attendance span').each((i, elem) => {
         const label = $(elem).text().trim();
@@ -338,11 +336,11 @@ function extractParliamentaryPerformance($) {
         }
       });
     }
-    
+
     // ========================================
     // Assign to metrics object
     // ========================================
-    
+
     if (attendance) {
       metrics.attendance = attendance;
       console.log(`  ✅ Attendance: ${metrics.attendance}`);
@@ -355,7 +353,7 @@ function extractParliamentaryPerformance($) {
       metrics.stateAttendance = stateAttendance;
       console.log(`  ✅ State Attendance: ${metrics.stateAttendance}`);
     }
-    
+
     if (debates) {
       metrics.debates = debates;
       console.log(`  ✅ Debates: ${metrics.debates}`);
@@ -368,7 +366,7 @@ function extractParliamentaryPerformance($) {
       metrics.stateDebates = stateDebates;
       console.log(`  ✅ State Debates: ${metrics.stateDebates}`);
     }
-    
+
     if (questions) {
       metrics.questions = questions;
       console.log(`  ✅ Questions: ${metrics.questions}`);
@@ -381,41 +379,40 @@ function extractParliamentaryPerformance($) {
       metrics.stateQuestions = stateQuestions;
       console.log(`  ✅ State Questions: ${metrics.stateQuestions}`);
     }
-    
+
     if (pmb) {
       metrics.pmb = pmb || '0';
       console.log(`  ✅ PMB: ${metrics.pmb}`);
     } else {
       metrics.pmb = '0';
     }
-    
+
     if (natPMB) {
       metrics.natPMB = natPMB || '0';
       console.log(`  ✅ National PMB: ${metrics.natPMB}`);
     } else {
       metrics.natPMB = '0';
     }
-    
+
     if (statePMB && statePMB !== '') {
       metrics.statePMB = statePMB;
       console.log(`  ✅ State PMB: ${metrics.statePMB}`);
     } else {
       metrics.statePMB = 'N/A';
     }
-    
+
     console.log('📊 Final extracted metrics:', metrics);
-    
+
     // Log the HTML structure for debugging if nothing was found
     if (metrics.attendance === 'N/A') {
       console.log('⚠️ WARNING: No performance data extracted!');
       console.log('HTML structure of .mp-attendance:');
       console.log($('.mp-attendance').html()?.substring(0, 500));
     }
-    
   } catch (e) {
     console.error('❌ Error extracting parliamentary performance:', e.message);
   }
-  
+
   return metrics;
 }
 
@@ -453,7 +450,7 @@ function extractState($) {
       if (label.includes('State')) {
         const stateText = $(elem).find('a').text().trim();
         if (stateText) {
-          foundState = stateText.replace(/\s*\d+\s*more\s*(MPs?|MLAs?)\s*/gi, '').trim();
+          foundState = stateText.replace(/\s*\d+\smore\s(MPs?|MLAs?)\s*/gi, '').trim();
           return false;
         }
       }
@@ -483,7 +480,7 @@ function extractParty($) {
       if (label.includes('Party')) {
         const partyText = $(elem).find('a').text().trim();
         if (partyText) {
-          foundParty = partyText.replace(/\s*\d+\s*more\s*(MPs?|MLAs?)\s*/gi, '').trim();
+          foundParty = partyText.replace(/\s*\d+\smore\s(MPs?|MLAs?)\s*/gi, '').trim();
           return false;
         }
       }
@@ -670,40 +667,40 @@ function constructURLs(name, type, reduced = false) {
     .replace(/\./g, '')
     .replace(/\s+/g, '-')
     .replace(/[^a-z0-9-]/g, '');
-  
+
   const urls = [];
-  const baseURL = type === 'MP' 
+  const baseURL = type === 'MP'
     ? 'https://prsindia.org/mptrack/18th-lok-sabha/'
     : 'https://prsindia.org/mlatrack/';
-  
+
   urls.push(`${baseURL}${nameSlug}`);
-  
+
   if (!reduced) {
     const parts = name.split(' ');
     if (parts.length > 2) {
       const firstLast = `${parts[0]}-${parts[parts.length - 1]}`.toLowerCase();
       urls.push(`${baseURL}${firstLast}`);
     }
-    
+
     // Try without middle names
     if (parts.length === 3) {
       const firstThird = `${parts[0]}-${parts[2]}`.toLowerCase();
       urls.push(`${baseURL}${firstThird}`);
     }
   }
-  
+
   return urls;
 }
 
 function validateMemberPage(html, type) {
   try {
     if (type === 'MP') {
-      return html.includes('mp-attendance') || 
-             html.includes('mp-debate') || 
+      return html.includes('mp-attendance') ||
+             html.includes('mp-debate') ||
              html.includes('mp_state') ||
              html.includes('mp-name');
     } else {
-      return html.includes('mla_state') || 
+      return html.includes('mla_state') ||
              html.includes('mla_constituency') ||
              html.includes('mla-name');
     }
@@ -758,4 +755,5 @@ function logDataSummary(data) {
   console.log(`  Type: ${data.type}`);
   console.log(`  State: ${data.state}`);
   console.log(`  Constituency: ${data.constituency}`);
-  console.log(`  Party: 
+  console.log(`  Party: ${data.party}`);
+}
