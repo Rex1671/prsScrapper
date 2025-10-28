@@ -549,239 +549,34 @@ function extractMLAEducation($) {
 // HTML TABLE EXTRACTION
 // ============================================================================
 
-// Add these new functions after the extractParliamentaryPerformance function
-
-// ============================================================================
-// EXTRACT ATTENDANCE FROM TABLE
-// ============================================================================
-
-function extractAttendanceFromTable($) {
+function extractAttendanceTable($) {
   try {
-    const table = $('#block-views-mp-related-views-block-1 table tbody tr');
-    
-    if (table.length === 0) {
-      console.log('⚠️ No attendance table found');
-      return { attendance: 'N/A', sessions: 0 };
+    const table = $('#block-views-mp-related-views-block-1 table').first();
+    if (table.length) {
+      return $.html(table);
     }
-
-    let totalAttendance = 0;
-    let sessionCount = 0;
-    let latestAttendance = 'N/A';
-
-    table.each((i, row) => {
-      const attendanceText = $(row).find('td').eq(1).text().trim();
-      const attendanceMatch = attendanceText.match(/(\d+)%/);
-      
-      if (attendanceMatch) {
-        const value = parseInt(attendanceMatch[1]);
-        
-        // First row is the latest
-        if (i === 0) {
-          latestAttendance = `${value}%`;
-        }
-        
-        totalAttendance += value;
-        sessionCount++;
-      }
-    });
-
-    const avgAttendance = sessionCount > 0 
-      ? `${Math.round(totalAttendance / sessionCount)}%` 
-      : 'N/A';
-
-    console.log(`✅ Attendance: Latest=${latestAttendance}, Avg=${avgAttendance}, Sessions=${sessionCount}`);
-
-    return {
-      attendance: latestAttendance !== 'N/A' ? latestAttendance : avgAttendance,
-      sessions: sessionCount,
-      avgAttendance
-    };
-
-  } catch (e) {
-    console.error('❌ Error parsing attendance table:', e);
-    return { attendance: 'N/A', sessions: 0 };
-  }
+  } catch (e) {}
+  return '';
 }
 
-// ============================================================================
-// EXTRACT DEBATES COUNT FROM TABLE
-// ============================================================================
-
-function extractDebatesFromTable($) {
+function extractDebatesTable($) {
   try {
-    const table = $('#block-views-mp-related-views-block table tbody tr');
-    const count = table.length;
-    
-    if (count > 0) {
-      console.log(`✅ Debates: ${count} participation(s) found`);
-      return count.toString();
+    const table = $('#block-views-mp-related-views-block table').first();
+    if (table.length) {
+      return $.html(table);
     }
-    
-    return 'N/A';
-  } catch (e) {
-    console.error('❌ Error counting debates:', e);
-    return 'N/A';
-  }
+  } catch (e) {}
+  return '';
 }
 
-// ============================================================================
-// EXTRACT QUESTIONS COUNT FROM TABLE
-// ============================================================================
-
-function extractQuestionsFromTable($) {
+function extractQuestionsTable($) {
   try {
-    const table = $('#block-views-mp-related-views-block-2 table tbody tr');
-    const count = table.length;
-    
-    if (count > 0) {
-      console.log(`✅ Questions: ${count} question(s) found`);
-      return count.toString();
+    const table = $('#block-views-mp-related-views-block-2 table').first();
+    if (table.length) {
+      return $.html(table);
     }
-    
-    return 'N/A';
-  } catch (e) {
-    console.error('❌ Error counting questions:', e);
-    return 'N/A';
-  }
-}
-
-// ============================================================================
-// UPDATED PARLIAMENTARY PERFORMANCE EXTRACTION
-// ============================================================================
-
-function extractParliamentaryPerformance($) {
-  const metrics = {
-    attendance: 'N/A',
-    natAttendance: 'N/A',
-    stateAttendance: 'N/A',
-    debates: 'N/A',
-    natDebates: 'N/A',
-    stateDebates: 'N/A',
-    questions: 'N/A',
-    natQuestions: 'N/A',
-    stateQuestions: 'N/A',
-    pmb: 'N/A',
-    natPMB: 'N/A',
-    statePMB: 'N/A'
-  };
-
-  try {
-    console.log('📊 Extracting parliamentary performance metrics...');
-
-    // ========================================
-    // STRATEGY 1: Extract from performance boxes (if available)
-    // ========================================
-    
-    // ATTENDANCE from boxes
-    let attendance = $('.mp-attendance .field-name-field-attendance .field-item').first().text().trim();
-    let natAttendance = $('.mp-attendance .field-name-field-national-attendance .field-item').first().text().trim();
-    let stateAttendance = $('.mp-attendance .field-name-field-state-attendance .field-item').first().text().trim();
-    
-    // Fallback: Check alternative selectors
-    if (!attendance) {
-      const attItems = $('.mp-attendance .attendance .field-item');
-      if (attItems.length >= 1) attendance = $(attItems[0]).text().trim();
-      if (attItems.length >= 2) natAttendance = $(attItems[1]).text().trim();
-      if (attItems.length >= 3) stateAttendance = $(attItems[2]).text().trim();
-    }
-
-    // ========================================
-    // STRATEGY 2: Extract from TABLES (primary data source)
-    // ========================================
-    
-    // If attendance not found in boxes, extract from table
-    if (!attendance || attendance === '' || attendance === 'N/A') {
-      const attendanceData = extractAttendanceFromTable($);
-      attendance = attendanceData.attendance;
-      console.log(`  📋 Using attendance from table: ${attendance}`);
-    }
-
-    // Extract debates count from table
-    const debatesFromTable = extractDebatesFromTable($);
-    
-    // Extract questions count from table
-    const questionsFromTable = extractQuestionsFromTable($);
-
-    // DEBATES from boxes
-    let debates = $('.mp-debate .field-name-field-author .field-item').first().text().trim();
-    let natDebates = $('.mp-debate .field-name-field-national-debate .field-item').first().text().trim();
-    let stateDebates = $('.mp-debate .field-name-field-state-debate .field-item').first().text().trim();
-    
-    if (!debates) {
-      const debItems = $('.mp-debate .debate .field-item');
-      if (debItems.length >= 1) debates = $(debItems[0]).text().trim();
-      if (debItems.length >= 2) natDebates = $(debItems[1]).text().trim();
-      if (debItems.length >= 3) stateDebates = $(debItems[2]).text().trim();
-    }
-
-    // If debates not found in boxes, use table count
-    if (!debates || debates === '' || debates === 'N/A') {
-      debates = debatesFromTable;
-      console.log(`  📋 Using debates count from table: ${debates}`);
-    }
-
-    // QUESTIONS from boxes
-    let questions = $('.mp-questions .field-name-field-total-expenses-railway .field-item').first().text().trim();
-    let natQuestions = $('.mp-questions .field-name-field-national-questions .field-item').first().text().trim();
-    let stateQuestions = $('.mp-questions .field-name-field-state-questions .field-item').first().text().trim();
-    
-    if (!questions) {
-      const qItems = $('.mp-questions .questions .field-item');
-      if (qItems.length >= 1) questions = $(qItems[0]).text().trim();
-      if (qItems.length >= 2) natQuestions = $(qItems[1]).text().trim();
-      if (qItems.length >= 3) stateQuestions = $(qItems[2]).text().trim();
-    }
-
-    // If questions not found in boxes, use table count
-    if (!questions || questions === '' || questions === 'N/A') {
-      questions = questionsFromTable;
-      console.log(`  📋 Using questions count from table: ${questions}`);
-    }
-
-    // PMB from boxes
-    let pmb = $('.mp-pmb .field-name-field-source .field-item').first().text().trim();
-    let natPMB = $('.mp-pmb .field-name-field-national-pmb .field-item').first().text().trim();
-    let statePMB = $('.mp-pmb .field-name-field-state-pmb .field-item').first().text().trim();
-    
-    if (!pmb) {
-      const pmbItems = $('.mp-pmb .pmb .field-item');
-      if (pmbItems.length >= 1) pmb = $(pmbItems[0]).text().trim();
-      if (pmbItems.length >= 2) natPMB = $(pmbItems[1]).text().trim();
-      if (pmbItems.length >= 3) statePMB = $(pmbItems[2]).text().trim();
-    }
-
-    // ========================================
-    // Assign final values
-    // ========================================
-    
-    metrics.attendance = attendance || 'N/A';
-    metrics.natAttendance = natAttendance || 'N/A';
-    metrics.stateAttendance = stateAttendance || 'N/A';
-    
-    metrics.debates = debates || 'N/A';
-    metrics.natDebates = natDebates || 'N/A';
-    metrics.stateDebates = stateDebates || 'N/A';
-    
-    metrics.questions = questions || 'N/A';
-    metrics.natQuestions = natQuestions || 'N/A';
-    metrics.stateQuestions = stateQuestions || 'N/A';
-    
-    metrics.pmb = pmb || '0';
-    metrics.natPMB = natPMB || '0';
-    metrics.statePMB = statePMB || 'N/A';
-
-    console.log('📊 Final metrics:', {
-      attendance: metrics.attendance,
-      debates: metrics.debates,
-      questions: metrics.questions,
-      pmb: metrics.pmb
-    });
-
-  } catch (e) {
-    console.error('❌ Error extracting performance:', e);
-  }
-
-  return metrics;
+  } catch (e) {}
+  return '';
 }
 
 // ============================================================================
@@ -855,6 +650,8 @@ function getEmptyResponse() {
 }
 
 function logDataSummary(data) {
+
+    console.log(data)
   console.log('📋 Extracted Data Summary:');
   console.log(`   Name: ${data.name}`);
   console.log(`   Type: ${data.type}`);
@@ -866,3 +663,4 @@ function logDataSummary(data) {
   console.log(`   Questions: ${data.questions} (Nat: ${data.natQuestions}, State: ${data.stateQuestions})`);
   console.log(`   PMB: ${data.pmb} (Nat: ${data.natPMB}, State: ${data.statePMB})`);
 }
+
