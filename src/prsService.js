@@ -1,4 +1,3 @@
-// src/prsService.js - OPTIMIZED VERSION with Priority Queue & Early Termination
 import * as cheerio from 'cheerio';
 import pLimit from 'p-limit';
 import { fetchHTML } from './webextract.js';
@@ -36,9 +35,7 @@ export async function getPRSData(name, type, constituency = null, state = null) 
   }
 }
 
-// ============================================================================
-// PRIORITY QUEUE APPROACH - CHECK MOST LIKELY URLS FIRST WITH EARLY TERMINATION
-// ============================================================================
+
 
 async function tryFetchWithType(name, type, reduced = false) {
   const urls = constructURLs(name, type, reduced);
@@ -50,40 +47,31 @@ async function tryFetchWithType(name, type, reduced = false) {
   
   console.log(`🔗 [PRS] Checking up to ${urls.length} URLs with priority-based early termination`);
 
-  // Group URLs by priority for MPs
   let priorityGroups = [];
   
   if (type === 'MP') {
     priorityGroups = [
-      // Priority 1: 18th Lok Sabha, base name, no suffix
       urls.filter(u => u.includes('18th-lok-sabha') && !u.match(/-\d+$/)),
       
-      // Priority 2: 18th Lok Sabha with numeric suffixes
       urls.filter(u => u.includes('18th-lok-sabha') && u.match(/-\d+$/)),
       
-      // Priority 3: 17th Lok Sabha, base name
       urls.filter(u => u.includes('17th-lok-sabha') && !u.match(/-\d+$/)),
-      
-      // Priority 4: 17th Lok Sabha with numeric suffixes
+
       urls.filter(u => u.includes('17th-lok-sabha') && u.match(/-\d+$/)),
       
-      // Priority 5: 16th Lok Sabha, base name
       urls.filter(u => u.includes('16th-lok-sabha') && !u.match(/-\d+$/)),
       
-      // Priority 6: 16th Lok Sabha with numeric suffixes
       urls.filter(u => u.includes('16th-lok-sabha') && u.match(/-\d+$/))
     ];
   } else {
-    // For MLAs, simpler priority: base names first, then suffixes
     priorityGroups = [
-      urls.filter(u => !u.match(/-\d+$/)), // No numeric suffix
-      urls.filter(u => u.match(/-\d+$/))   // With numeric suffix
+      urls.filter(u => !u.match(/-\d+$/)), 
+      urls.filter(u => u.match(/-\d+$/))   
     ];
   }
 
   let totalChecked = 0;
 
-  // Check each priority group sequentially
   for (let groupIndex = 0; groupIndex < priorityGroups.length; groupIndex++) {
     const group = priorityGroups[groupIndex];
     
@@ -91,7 +79,6 @@ async function tryFetchWithType(name, type, reduced = false) {
     
     console.log(`🔍 [PRS] Priority Group ${groupIndex + 1}/${priorityGroups.length}: Checking ${group.length} URLs`);
     
-    // Check this group in parallel (max 8 concurrent)
     const results = await Promise.allSettled(
       group.map((url, index) => 
         limit(async () => {
@@ -119,7 +106,6 @@ async function tryFetchWithType(name, type, reduced = false) {
       )
     );
     
-    // Check if any succeeded in this group
     for (const result of results) {
       if (result.status === 'fulfilled' && result.value.success) {
         const { url, html, duration } = result.value;
@@ -148,25 +134,20 @@ async function tryFetchWithType(name, type, reduced = false) {
   return getEmptyResponse();
 }
 
-// ============================================================================
-// ENHANCED URL CONSTRUCTION WITH DEDUPLICATION & SMART VARIATIONS
-// ============================================================================
+
 
 function constructURLs(name, type, reduced = false) {
-  // Normalize and sanitize name
   const nameSlug = name
     .toLowerCase()
-    .replace(/\+/g, ' ')         // treat + as space
-    .replace(/\./g, '')          // remove dots
-    .replace(/\s+/g, '-')        // replace spaces with dashes
-    .replace(/[^a-z0-9-]/g, '')  // remove all other special chars
-    .replace(/-+/g, '-')         // replace multiple hyphens with single
-    .replace(/^-|-$/g, '');      // remove leading/trailing hyphens
-
-  const urlSet = new Set(); // Use Set to avoid duplicates
+    .replace(/\+/g, ' ')       
+    .replace(/\./g, '')       
+    .replace(/\s+/g, '-')       
+    .replace(/[^a-z0-9-]/g, '') 
+    .replace(/-+/g, '-')        
+    .replace(/^-|-$/g, '');    
+  const urlSet = new Set(); 
   const urls = [];
   
-  // Helper function to add URL if unique
   const addURL = (url) => {
     if (!urlSet.has(url)) {
       urlSet.add(url);
@@ -175,18 +156,15 @@ function constructURLs(name, type, reduced = false) {
   };
   
   if (type === 'MP') {
-    // For MPs, try 18th, 17th, and 16th Lok Sabha
     const lokSabhas = ['18th-lok-sabha', '17th-lok-sabha', '16th-lok-sabha'];
     const numericSuffixes = ['', '-1', '-2', '-3'];
     
-    // Generate all combinations for base name
     for (const sabha of lokSabhas) {
       for (const suffix of numericSuffixes) {
         addURL(`https://prsindia.org/mptrack/${sabha}/${nameSlug}${suffix}`);
       }
     }
     
-    // If not reduced, also try name variations
     if (!reduced) {
       const parts = name
         .replace(/\+/g, ' ')
@@ -194,7 +172,6 @@ function constructURLs(name, type, reduced = false) {
         .split(/\s+/)
         .filter(p => p.length > 0);
 
-      // Try first-last for names with 2 or more parts
       if (parts.length >= 2) {
         const firstLast = `${parts[0]}-${parts[parts.length - 1]}`
           .toLowerCase()
@@ -202,7 +179,6 @@ function constructURLs(name, type, reduced = false) {
           .replace(/-+/g, '-')
           .replace(/^-|-$/g, '');
         
-        // Only add if different from original slug
         if (firstLast !== nameSlug && firstLast.length > 0) {
           for (const sabha of lokSabhas) {
             for (const suffix of numericSuffixes) {
@@ -212,9 +188,7 @@ function constructURLs(name, type, reduced = false) {
         }
       }
 
-      // Try middle name variations for 3+ part names
       if (parts.length >= 3) {
-        // Skip middle name (keep first and last)
         const skipMiddle = [parts[0], parts[parts.length - 1]]
           .join('-')
           .toLowerCase()
@@ -230,7 +204,6 @@ function constructURLs(name, type, reduced = false) {
           }
         }
         
-        // Try first name + middle initial + last name
         if (parts[1].length > 0) {
           const firstInitialLast = `${parts[0]}-${parts[1][0]}-${parts[parts.length - 1]}`
             .toLowerCase()
@@ -248,11 +221,9 @@ function constructURLs(name, type, reduced = false) {
     }
     
   } else {
-    // For MLAs - no Lok Sabha variations
     const baseURL = 'https://prsindia.org/mlatrack/';
     const numericSuffixes = ['', '-1', '-2', '-3'];
     
-    // Base name with suffixes
     for (const suffix of numericSuffixes) {
       addURL(`${baseURL}${nameSlug}${suffix}`);
     }
@@ -264,7 +235,6 @@ function constructURLs(name, type, reduced = false) {
         .split(/\s+/)
         .filter(p => p.length > 0);
 
-      // Try first-last for names with 2 or more parts
       if (parts.length >= 2) {
         const firstLast = `${parts[0]}-${parts[parts.length - 1]}`
           .toLowerCase()
@@ -279,7 +249,6 @@ function constructURLs(name, type, reduced = false) {
         }
       }
 
-      // Try middle name variations for 3+ part names
       if (parts.length >= 3) {
         const skipMiddle = [parts[0], parts[parts.length - 1]]
           .join('-')
@@ -308,16 +277,13 @@ function constructURLs(name, type, reduced = false) {
   return urls;
 }
 
-// ============================================================================
-// IMPROVED VALIDATION WITH ROBUST CHECKS
-// ============================================================================
+
 
 function validateMemberPage(html, type) {
   if (!html || html.length < 500) {
-    return false; // Too short to be a real member page
+    return false;
   }
 
-  // Check for "page not found" or error indicators
   const lowerHTML = html.toLowerCase();
   if (lowerHTML.includes('page not found') || 
       lowerHTML.includes('404') || 
@@ -327,7 +293,6 @@ function validateMemberPage(html, type) {
   }
 
   if (type === 'MP') {
-    // MP pages should have at least one of these key indicators
     return (
       html.includes('mp-attendance') || 
       html.includes('mp-debate') || 
@@ -337,7 +302,6 @@ function validateMemberPage(html, type) {
       html.includes('mptrack')
     );
   } else {
-    // MLA pages should have these indicators
     return (
       html.includes('mla_state') || 
       html.includes('mla_constituency') ||
@@ -347,16 +311,13 @@ function validateMemberPage(html, type) {
   }
 }
 
-// ============================================================================
-// PARSE TO EXACT FLAT FORMAT WITH HTML TABLES
-// ============================================================================
+
 
 function parseToFlatFormat(html, type) {
   const $ = cheerio.load(html);
   
   console.log(`📄 [PRS] Parsing to flat format (${type})...`);
   
-  // Check if data is available
   const dataNotAvailable = $('.text-center h3').text().includes('Data not available');
   
   if (type === 'MP') {
@@ -367,34 +328,28 @@ function parseToFlatFormat(html, type) {
 }
 
 function parseMPData($, html, dataNotAvailable) {
-  // Extract all performance metrics with multiple fallback strategies
   const performance = extractParliamentaryPerformance($);
   
   const data = {
     type: 'MP',
     
-    // Basic Info
     name: extractName($),
     imageUrl: extractImage($),
     state: extractState($),
     constituency: extractConstituency($),
     party: extractParty($),
     
-    // Term Info
     termStart: extractTermStart($),
     termEnd: extractTermEnd($),
     noOfTerm: extractNoOfTerm($),
     membership: extractMembership($),
     
-    // Personal Info
     age: extractAge($),
     gender: extractGender($),
     education: extractEducation($),
     
-    // Performance Metrics
     ...performance,
     
-    // HTML Tables
     attendanceTable: extractAttendanceTable($),
     debatesTable: extractDebatesTable($),
     questionsTable: extractQuestionsTable($)
@@ -409,24 +364,20 @@ function parseMLAData($, html, dataNotAvailable) {
   const data = {
     type: 'MLA',
     
-    // Basic Info
     name: extractMLAName($),
     imageUrl: extractMLAImage($),
     state: extractState($),
     constituency: extractMLAConstituency($),
     party: extractParty($),
     
-    // Term Info
     termStart: extractMLATermStart($),
     termEnd: extractMLATermEnd($),
     membership: extractMLAMembership($),
     
-    // Personal Info
     age: extractMLAAge($),
     gender: extractGender($),
     education: extractMLAEducation($),
     
-    // Performance Data (usually not available for MLAs)
     attendance: 'N/A',
     natAttendance: 'N/A',
     stateAttendance: 'N/A',
@@ -440,12 +391,10 @@ function parseMLAData($, html, dataNotAvailable) {
     natPMB: 'N/A',
     statePMB: 'N/A',
     
-    // HTML Tables
     attendanceTable: '',
     debatesTable: '',
     questionsTable: '',
     
-    // Note
     note: dataNotAvailable ? 'Data not available' : 'Member data is taken from the election affidavits'
   };
   
@@ -454,9 +403,6 @@ function parseMLAData($, html, dataNotAvailable) {
   return data;
 }
 
-// ============================================================================
-// PARLIAMENTARY PERFORMANCE EXTRACTION - MULTI-STRATEGY APPROACH
-// ============================================================================
 
 function extractParliamentaryPerformance($) {
   const metrics = {
@@ -477,34 +423,24 @@ function extractParliamentaryPerformance($) {
   try {
     console.log('📊 Extracting parliamentary performance metrics...');
 
-    // ========================================
-    // STRATEGY 1: Direct field-name selectors
-    // ========================================
     
-    // ATTENDANCE
     let attendance = $('.mp-attendance .field-name-field-attendance .field-item').first().text().trim();
     let natAttendance = $('.mp-attendance .field-name-field-national-attendance .field-item').first().text().trim();
     let stateAttendance = $('.mp-attendance .field-name-field-state-attendance .field-item').first().text().trim();
     
-    // DEBATES
     let debates = $('.mp-debate .field-name-field-author .field-item').first().text().trim();
     let natDebates = $('.mp-debate .field-name-field-national-debate .field-item').first().text().trim();
     let stateDebates = $('.mp-debate .field-name-field-state-debate .field-item').first().text().trim();
     
-    // QUESTIONS
     let questions = $('.mp-questions .field-name-field-total-expenses-railway .field-item').first().text().trim();
     let natQuestions = $('.mp-questions .field-name-field-national-questions .field-item').first().text().trim();
     let stateQuestions = $('.mp-questions .field-name-field-state-questions .field-item').first().text().trim();
     
-    // PMB
     let pmb = $('.mp-pmb .field-name-field-source .field-item').first().text().trim();
     let natPMB = $('.mp-pmb .field-name-field-national-pmb .field-item').first().text().trim();
     let statePMB = $('.mp-pmb .field-name-field-state-pmb .field-item').first().text().trim();
 
-    // ========================================
-    // STRATEGY 2: Fallback - use div.attendance/debate/questions/pmb structure
-    // ========================================
-    
+  
     if (!attendance || attendance === '') {
       const attItems = $('.mp-attendance .attendance .field-item');
       console.log(`  Fallback: Found ${attItems.length} attendance field-items`);
@@ -537,9 +473,6 @@ function extractParliamentaryPerformance($) {
       if (pmbItems.length >= 3) statePMB = $(pmbItems[2]).text().trim();
     }
 
-    // ========================================
-    // STRATEGY 3: Parse from span labels
-    // ========================================
     
     if (!attendance || attendance === '') {
       $('.mp-attendance span').each((i, elem) => {
@@ -554,9 +487,7 @@ function extractParliamentaryPerformance($) {
       });
     }
 
-    // ========================================
-    // Assign to metrics object
-    // ========================================
+   
     
     if (attendance) {
       metrics.attendance = attendance;
@@ -620,7 +551,6 @@ function extractParliamentaryPerformance($) {
 
     console.log('📊 Final extracted metrics:', metrics);
     
-    // Log the HTML structure for debugging if nothing was found
     if (metrics.attendance === 'N/A') {
       console.log('⚠️ WARNING: No performance data extracted!');
       console.log('HTML structure of .mp-attendance:');
@@ -633,10 +563,6 @@ function extractParliamentaryPerformance($) {
 
   return metrics;
 }
-
-// ============================================================================
-// BASIC INFO EXTRACTION FUNCTIONS
-// ============================================================================
 
 function extractName($) {
   try {
@@ -770,9 +696,7 @@ function extractEducation($) {
   return 'N/A';
 }
 
-// ============================================================================
-// MLA SPECIFIC EXTRACTION FUNCTIONS
-// ============================================================================
+
 
 function extractMLAName($) {
   return extractName($);
@@ -810,30 +734,13 @@ function extractMLAEducation($) {
   return extractEducation($);
 }
 
-// ============================================================================
-// HTML TABLE EXTRACTION
-// ============================================================================
-
-// ============================================================================
-// HTML TABLE EXTRACTION - FIXED SELECTORS
-// ============================================================================
-
-// ============================================================================
-// HTML TABLE EXTRACTION - ROBUST HEADING-BASED APPROACH
-// ============================================================================
-
-// ============================================================================
-// HTML TABLE EXTRACTION - COMPREHENSIVE MULTI-STRATEGY APPROACH
-// ============================================================================
 
 function extractAttendanceTable($) {
   try {
     console.log('🔍 Extracting Attendance Table...');
     let table = null;
     
-    // ========================================
-    // Strategy 1: Direct ID selectors
-    // ========================================
+ 
     const knownIds = [
       '#block-views-mps-attendance-block',
       '#block-views-mp-related-views-block-1',
@@ -849,9 +756,7 @@ function extractAttendanceTable($) {
       }
     }
     
-    // ========================================
-    // Strategy 2: Search by heading text
-    // ========================================
+
     if (!table || !table.length) {
       console.log('  🔄 Trying heading-based search...');
       $('h2, h3, h4').each((i, heading) => {
@@ -860,18 +765,16 @@ function extractAttendanceTable($) {
             text.includes('attendance of') ||
             text.match(/\d+%\s*attendance/)) {
           
-          // Try to find table in parent section
           const section = $(heading).closest('section');
           if (section.length) {
             const foundTable = section.find('table').first();
             if (foundTable.length) {
               table = foundTable;
               console.log(`  ✅ Found via heading: "${$(heading).text().trim()}"`);
-              return false; // break
+              return false; 
             }
           }
           
-          // Try siblings
           const siblingTable = $(heading).nextAll('table').first();
           if (siblingTable.length) {
             table = siblingTable;
@@ -879,7 +782,6 @@ function extractAttendanceTable($) {
             return false;
           }
           
-          // Try in next div
           const nextDiv = $(heading).next('div').find('table').first();
           if (nextDiv.length) {
             table = nextDiv;
@@ -890,9 +792,7 @@ function extractAttendanceTable($) {
       });
     }
     
-    // ========================================
-    // Strategy 3: Search by section ID containing "attendance"
-    // ========================================
+  
     if (!table || !table.length) {
       console.log('  🔄 Trying section ID search...');
       $('section[id*="attendance" i]').each((i, section) => {
@@ -905,9 +805,7 @@ function extractAttendanceTable($) {
       });
     }
     
-    // ========================================
-    // Strategy 4: Look for table with "Session" header
-    // ========================================
+  
     if (!table || !table.length) {
       console.log('  🔄 Trying table header search...');
       $('table').each((i, tbl) => {
@@ -915,7 +813,6 @@ function extractAttendanceTable($) {
           $(th).text().trim().toLowerCase()
         ).get();
         
-        // Attendance tables typically have "Session" and "Attendance" columns
         if (headers.includes('session') && headers.includes('attendance')) {
           table = $(tbl);
           console.log(`  ✅ Found by table headers: [${headers.join(', ')}]`);
@@ -924,9 +821,7 @@ function extractAttendanceTable($) {
       });
     }
     
-    // ========================================
-    // Strategy 5: Look in .table-responsive divs
-    // ========================================
+
     if (!table || !table.length) {
       console.log('  🔄 Trying .table-responsive search...');
       $('.table-responsive').each((i, div) => {
@@ -942,15 +837,12 @@ function extractAttendanceTable($) {
       });
     }
     
-    // ========================================
-    // Validate and return
-    // ========================================
+
     if (table && table.length > 0) {
       const rowCount = table.find('tbody tr').length;
       const colCount = table.find('thead th').length;
       console.log(`  ✅ Attendance table extracted (${rowCount} rows, ${colCount} columns)`);
       
-      // Log headers for verification
       const headers = table.find('thead th').map((i, th) => $(th).text().trim()).get();
       console.log(`  📋 Headers: [${headers.join(', ')}]`);
       
@@ -959,7 +851,6 @@ function extractAttendanceTable($) {
     
     console.log(`  ⚠️ Attendance table not found after all strategies`);
     
-    // Debug: Show all available sections
     console.log(`  🔍 Available sections with tables:`);
     $('section[id]').each((i, section) => {
       const id = $(section).attr('id');
@@ -981,7 +872,6 @@ function extractDebatesTable($) {
     console.log('🔍 Extracting Debates Table...');
     let table = null;
     
-    // Strategy 1: Direct ID selectors
     const knownIds = [
       '#block-views-mps-debate-related-views-block',
       '#block-views-mp-related-views-block',
@@ -997,7 +887,6 @@ function extractDebatesTable($) {
       }
     }
     
-    // Strategy 2: Search by heading
     if (!table || !table.length) {
       $('h2, h3, h4').each((i, heading) => {
         const text = $(heading).text().toLowerCase();
@@ -1018,7 +907,6 @@ function extractDebatesTable($) {
       });
     }
     
-    // Strategy 3: Section ID search
     if (!table || !table.length) {
       $('section[id*="debate" i]').each((i, section) => {
         const foundTable = $(section).find('table').first();
@@ -1030,7 +918,6 @@ function extractDebatesTable($) {
       });
     }
     
-    // Strategy 4: Table header search
     if (!table || !table.length) {
       $('table').each((i, tbl) => {
         const headers = $(tbl).find('thead th').text().toLowerCase();
@@ -1061,7 +948,6 @@ function extractQuestionsTable($) {
     console.log('🔍 Extracting Questions Table...');
     let table = null;
     
-    // Strategy 1: Direct ID selectors
     const knownIds = [
       '#block-views-mps-questions-block',
       '#block-views-mp-questions-block',
@@ -1077,7 +963,6 @@ function extractQuestionsTable($) {
       }
     }
     
-    // Strategy 2: Search by heading
     if (!table || !table.length) {
       $('h2, h3, h4').each((i, heading) => {
         const text = $(heading).text().toLowerCase();
@@ -1098,7 +983,6 @@ function extractQuestionsTable($) {
       });
     }
     
-    // Strategy 3: Section ID search
     if (!table || !table.length) {
       $('section[id*="question" i]').each((i, section) => {
         const foundTable = $(section).find('table').first();
@@ -1110,7 +994,6 @@ function extractQuestionsTable($) {
       });
     }
     
-    // Strategy 4: Table header search (unique to questions)
     if (!table || !table.length) {
       $('table').each((i, tbl) => {
         const headers = $(tbl).find('thead th').text().toLowerCase();
@@ -1136,9 +1019,6 @@ function extractQuestionsTable($) {
   }
   return '';
 }
-// ============================================================================
-// UTILITY FUNCTIONS
-// ============================================================================
 
 function getEmptyResponse() {
   return {
