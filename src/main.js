@@ -1,15 +1,12 @@
-// src/main.js - Appwrite Function Entry Point
 import { getPRSData } from './prsService.js';
 
 export default async ({ req, res, log, error }) => {
   const startTime = Date.now();
   
   try {
-    // Parse request parameters with better body handling
     let params = {};
     
     if (req.method === 'POST') {
-      // Handle different body formats
       if (req.body) {
         if (typeof req.body === 'string') {
           try {
@@ -23,12 +20,10 @@ export default async ({ req, res, log, error }) => {
         }
       }
       
-      // Also check bodyJson if available (Appwrite sometimes uses this)
       if (req.bodyJson) {
         params = { ...params, ...req.bodyJson };
       }
       
-      // Fallback to query params if body is empty
       if (Object.keys(params).length === 0 && req.query) {
         params = req.query;
       }
@@ -38,11 +33,9 @@ export default async ({ req, res, log, error }) => {
     
     const { name, type, constituency, state } = params;
     
-    // Log what we received for debugging
     log(`📥 Received params: ${JSON.stringify(params)}`);
     log(`🔍 [PRS] Request received: ${name} (${type})`);
     
-    // Validation
     if (!name || !type) {
       return res.json({
         success: false,
@@ -73,7 +66,6 @@ export default async ({ req, res, log, error }) => {
       }, 400);
     }
     
-    // Fetch data
     log(`🚀 Starting data fetch for ${name}...`);
     const result = await getPRSData(
       name.trim(), 
